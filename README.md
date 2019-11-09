@@ -48,3 +48,8 @@ Window:
 
 Mac:
 1) Idk man, I can't afford apple product
+
+# Usage
+Once you've setup the installation you should be able to run `ribozyme` from the terminal/command line.
+You just need to run `ribozyme <directory>` to merge all resourcepacks inside said directory. Keep in mind that you can't use `.` to use the current directory (well...you can but I didn't write my program to handle it so it'll just panic itself and then crash)
+The program will then generate `ribozyme.zip` at the location you're running this command from.
