@@ -41,7 +41,7 @@ pub fn merger(directory: &PathBuf) -> Result<()> {
 	println!("{} Total duplicates: {}", "[✓]".green(), format!("{}", total_meta.duplicates).green());
 	println!("{} Total conflicts: {}", "[✓]".green(), format!("{}", total_meta.conflicts).green());
 
-	let zip_output = directory.join("ribozyme.zip");
+	let zip_output = PathBuf::from("ribozyme.zip");
 	println!("{} Compressing file to {}", "[~]".yellow(), format!("'{}'", zip_output.display()).cyan());
 	let total_bytes = compress(&output, &zip_output)?;
 	println!("{} Finish compressing file to {} ({} bytes)", "[✓]".green(), format!("'{}'", zip_output.display()).cyan(), total_bytes);
