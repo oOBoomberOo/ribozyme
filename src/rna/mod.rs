@@ -49,7 +49,7 @@ pub fn merger(directory: &PathBuf) -> Result<()> {
 
 	println!("{} Removing temp directory", "[~]".yellow());
 	fs::remove_dir_all(&temp)?;
-	// fs::remove_dir_all(&output)?;
+	fs::remove_dir_all(&output)?;
 	println!("{} Finish removing temp directory", "[✓]".green());
 
 	Ok(())

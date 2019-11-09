@@ -95,8 +95,6 @@ impl Format {
 				else {
 					result.kind = FormatKind::JSON;
 				}
-
-				println!("{:?}: {}", result.kind, path.display());
 			}
 		} else {
 			if let Some(name) = path.file_name() {
