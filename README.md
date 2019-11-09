@@ -27,3 +27,24 @@ Ribozyme cannot merge `image`/`text`/`sound` file at all, it will be completely 
 To prevent this refer to the previous method.
 
 Ribozyme cannot merge block state file, It's such a pain in the ass.
+
+# Installation
+There aren't any one click installer yet so you have to download the program and set it up yourself.
+
+Linux:
+1) Download the program
+2) Put it inside `/bin` or `/usr/bin` (You will need root access)
+
+Window:
+1) Download the program
+2) Put it anywhere you want
+3) You have open `System Properties` window (You can access this by typing `env` in the search box)
+4) Click "Environment Variables"
+5) Locate variable name "Path"
+6) Click "Edit"
+7) Click "New"
+8) Type the path to where the program is located
+9) Click "Ok"
+
+Mac:
+1) Idk man, I can't afford apple product
