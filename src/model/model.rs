@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::fmt;
+use super::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ItemModel {
@@ -16,8 +17,8 @@ pub struct ItemModel {
 	pub overrides: Option<Vec<Override>>
 }
 
-impl Invalid for ItemModel {
-	fn invalid() -> ItemModel {
+impl Default for ItemModel {
+	fn default() -> ItemModel {
 		ItemModel {
 			parent: None,
 			display: None,
@@ -36,15 +37,20 @@ impl Validate for ItemModel {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Display {
-	rotation: [f32; 3],
-	translation: [f32; 3],
-	scale: [f32; 3],
+	#[serde(skip_serializing_if="Option::is_none")]
+	rotation: Option<[f32; 3]>,
+	#[serde(skip_serializing_if="Option::is_none")]
+	translation: Option<[f32; 3]>,
+	#[serde(skip_serializing_if="Option::is_none")]
+	scale: Option<[f32; 3]>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Element {
 	from: [f32; 3],
 	to: [f32; 3],
+	#[serde(skip_serializing_if="Option::is_none")]
+	name: Option<String>,
 	#[serde(skip_serializing_if="Option::is_none")]
 	rotation: Option<Rotation>,
 	#[serde(skip_serializing_if="Option::is_none")]
@@ -64,8 +70,10 @@ pub struct Rotation {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Face {
-	uv: [f32; 4],
-	texture: String,
+	#[serde(skip_serializing_if="Option::is_none")]
+	uv: Option<[f32; 4]>,
+	#[serde(skip_serializing_if="Option::is_none")]
+	texture: Option<String>,
 	#[serde(skip_serializing_if="Option::is_none")]
 	cullface: Option<String>,
 	#[serde(skip_serializing_if="Option::is_none")]
@@ -132,12 +140,4 @@ impl Validate for Predicate {
 	fn is_valid(&self) -> bool {
 		self.angle.is_some() || self.blocking.is_some() || self.broken.is_some() || self.cast.is_some() || self.cooldown.is_some() || self.damage.is_some() || self.damaged.is_some() || self.lefthanded.is_some() || self.pull.is_some() || self.pulling.is_some() || self.throwing.is_some() || self.time.is_some() || self.custom_model_data.is_some()
 	}
-}
-
-pub trait Validate {
-	fn is_valid(&self) -> bool;
-}
-
-pub trait Invalid {
-	fn invalid() -> Self;
 }

@@ -1,10 +1,8 @@
 mod chromosome;
 mod nucleotide;
-mod model;
 
 pub use chromosome::{Chromosome, ChromosomeKind};
 pub use nucleotide::Nucleotide;
-pub use model::{ItemModel, Predicate, Validate, Invalid};
 
 /**
  * Meta contain meta-data about conflicts and duplicates of nucleotide.
@@ -48,7 +46,7 @@ impl AddAssign for Meta {
 			bytes: self.bytes + rhs.bytes,
 			nucleotides: self.nucleotides + rhs.nucleotides,
 			duplicates: self.duplicates + rhs.duplicates,
-			conflicts: self.conflicts + rhs.conflicts
+			conflicts: self.conflicts + rhs.conflicts,
 		};
 	}
 }
@@ -60,41 +58,47 @@ impl AddAssign for Meta {
 pub enum FormatKind {
 	Model,
 	JSON,
+	BlockState,
+	Font,
 	Other,
 	Skip,
 }
 
+use std::fs;
 use std::path::PathBuf;
-use std::fs::File;
+pub use crate::model::{BlockState, Font, ItemModel, Validate};
 
 pub struct Format {
-	kind: FormatKind
+	kind: FormatKind,
 }
 
 impl Format {
-	pub fn identify_format(path: &PathBuf) -> Format  {
+	pub fn identify_format(path: &PathBuf) -> Format {
 		let path = path.to_owned();
 		let mut result = Format::default();
 		if let Some(extension) = path.extension() {
-			let content = match File::open(&path) {
-				Ok(x) => x,
-				_ => panic!("Unable to read file at {}", path.display())
-			};
-
 			if extension == "json" {
-				result.kind = FormatKind::JSON;
-
-				let model: ItemModel = match serde_json::from_reader(content) {
-					Ok(content) => content,
-					_ => ItemModel::invalid(),
-				};
+				let content = fs::read_to_string(&path).unwrap_or_default();
+				let model: ItemModel = serde_json::from_str(&content).unwrap_or_default();
+				let block_state: BlockState = serde_json::from_str(&content).unwrap_or_default();
+				let font: Font = serde_json::from_str(&content).unwrap_or_default();
 
 				if model.is_valid() {
 					result.kind = FormatKind::Model;
 				}
+				else if block_state.is_valid() {
+					result.kind = FormatKind::BlockState;
+				}
+				else if font.is_valid() {
+					result.kind = FormatKind::Font;
+				}
+				else {
+					result.kind = FormatKind::JSON;
+				}
+
+				println!("{:?}: {}", result.kind, path.display());
 			}
-		}
-		else {
+		} else {
 			if let Some(name) = path.file_name() {
 				if name == ".DS_Store" {
 					result.kind = FormatKind::Skip;
@@ -108,6 +112,8 @@ impl Format {
 
 impl Default for Format {
 	fn default() -> Self {
-		Format { kind: FormatKind::Other }
+		Format {
+			kind: FormatKind::Other,
+		}
 	}
 }

@@ -1,4 +1,4 @@
-use super::{Chromosome, Format, FormatKind, ItemModel, Meta};
+use super::{Chromosome, Format, FormatKind, ItemModel, Meta, Font};
 use colored::*;
 use std::fs;
 use std::fs::File;
@@ -43,9 +43,10 @@ impl Nucleotide {
 	fn duplicate(&self) -> iResult<Meta> {
 		let mut meta: Meta = Meta::default();
 		let format = Format::identify_format(&self.location);
+		meta.duplicates += 1;
 
 		//* Completely replace nucleotide
-		if format.kind == FormatKind::Other {
+		if format.kind == FormatKind::Other || format.kind == FormatKind::BlockState {
 			meta.bytes += self.transcript().unwrap_or_default();
 			meta.duplicates += 1;
 		}
@@ -112,7 +113,6 @@ impl Nucleotide {
 			let content = serde_json::to_string_pretty(&result)?;
 			meta.bytes += self.transport(&content)?;
 			meta.conflicts += conflicts.len();
-			meta.duplicates += 1;
 		}
 		//* Merge JSON object
 		else if format.kind == FormatKind::JSON {
@@ -125,7 +125,27 @@ impl Nucleotide {
 
 			let content = serde_json::to_string_pretty(&result)?;
 			meta.bytes += self.transport(&content)?;
-			meta.duplicates += 1;
+		}
+		else if format.kind == FormatKind::Font {
+			let prev_content = fs::read_to_string(&self.ribosome)?;
+			let prev: Font = serde_json::from_str(&prev_content)?;
+			let next_content = fs::read_to_string(&self.location)?;
+			let next: Font = serde_json::from_str(&next_content)?;
+
+			let mut result = next.clone();
+			let mut providers = Vec::default();
+
+			if let Some(mut prev_providers) = prev.providers {
+				providers.append(&mut prev_providers);
+			}
+			if let Some(mut next_providers) = next.providers {
+				providers.append(&mut next_providers);
+			}
+			
+			result.providers = Some(providers);
+
+			let content = serde_json::to_string_pretty(&result)?;
+			meta.bytes += self.transport(&content)?;
 		}
 
 		Ok(meta)

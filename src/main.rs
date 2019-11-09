@@ -1,3 +1,4 @@
+mod model;
 mod rna;
 mod gene;
 
@@ -18,4 +19,10 @@ fn main() {
 	let directory = matches.value_of("directory").unwrap_or_else(|| panic!("Invalid directory!"));
 	let directory = PathBuf::from(directory);
 	rna::merger(&directory).unwrap();
+
+	/* let path = PathBuf::from("test/default.json");
+	println!("exists?: {}", path.exists());
+	let test = std::fs::read_to_string(path).unwrap_or_else(|_| panic!("#1 Panicing..."));
+	let data: model::BlockState = serde_json::from_str(&test).unwrap_or_else(|e| panic!("{}", e));
+	println!("{:#?}", data); */
 }
