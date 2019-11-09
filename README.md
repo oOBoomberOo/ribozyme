@@ -1,6 +1,6 @@
 # About
 ### What is 'Ribozyme'?
-Ribozyme or Ribonucleic Acid Enzyme is an enzyme that catalyst a certain chemical reaction.
+Ribozyme or Ribonucleic Acid Enzyme is an enzyme that catalyst a certain chemical reaction.  
 Ribozyme is a Minecraft Resourcepack Merger for merging datapack's resourcepacks together, written completely in rust.
 Similarly, this program help speed up the process of merging resourcepacks together just like a catalyst.
 
@@ -50,6 +50,6 @@ Mac:
 1) Idk man, I can't afford apple product
 
 # Usage
-Once you've setup the installation you should be able to run `ribozyme` from the terminal/command line.
-You just need to run `ribozyme <directory>` to merge all resourcepacks inside said directory. Keep in mind that you can't use `.` to use the current directory (well...you can but I didn't write my program to handle it so it'll just panic itself and then crash)
+Once you've setup the installation you should be able to run `ribozyme` from the terminal/command line.  
+You just need to run `ribozyme <directory>` to merge all resourcepacks inside said directory. Keep in mind that you can't use `.` to use the current directory (well...you can but I didn't write my program to handle it so it'll just panic itself and then crash and I just notice it at the last minute so I really don't want to fix it now)  
 The program will then generate `ribozyme.zip` at the location you're running this command from.
