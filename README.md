@@ -40,11 +40,9 @@ Window:
 2) Put it anywhere you want
 3) You have open `System Properties` window (You can access this by typing `env` in the search box)
 4) Click "Environment Variables"
-5) Locate variable name "Path"
-6) Click "Edit"
-7) Click "New"
-8) Type the path to where the program is located
-9) Click "Ok"
+5) Locate variable name "Path" > Edit > New
+6) Type the path to the directory where the program is located
+7) Click "Ok"
 
 Mac:
 1) Idk man, I can't afford apple product
