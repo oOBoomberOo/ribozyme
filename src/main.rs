@@ -8,7 +8,7 @@ use std::fs::canonicalize;
 
 fn main() {
 	let matches = App::new("Ribozyme")
-		.version("0.1.0")
+		.version("0.1.1")
 		.author("Boomber")
 		.about("Catalyst for resourcepacks merging")
 		.arg(Arg::with_name("directory")
