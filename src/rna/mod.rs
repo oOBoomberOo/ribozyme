@@ -10,12 +10,18 @@ pub fn merger(directory: &PathBuf) -> Result<()> {
 	if output.exists() {
 		fs::remove_dir_all(&output)?;
 	}
-	fs::create_dir_all(&output)?;
+	match fs::create_dir_all(&output) {
+		Ok(_) => (),
+		Err(_) => println!("Unable to create output directory")
+	};
 
 	if temp.exists() {
 		fs::remove_dir_all(&temp)?;
 	}
-	fs::create_dir_all(&temp)?;
+	match fs::create_dir_all(&temp) {
+		Ok(_) => (),
+		Err(_) => println!("Unable to create temp directory")
+	};
 
 	let mut meta = Vec::default();
 	for entry in fs::read_dir(&directory)? {
@@ -25,12 +31,26 @@ pub fn merger(directory: &PathBuf) -> Result<()> {
 
 		let chromosome_kind = chromosome.validate();
 		if chromosome_kind == ChromosomeKind::Directory {
-			meta.push(chromosome.handle()?);
+			if let Ok(chromosome_handler) = chromosome.handle() {
+				meta.push(chromosome_handler);
+			}
+			else {
+				println!("Failed to parse resourcepack {}", format!("'{}'", entry.path().display()).cyan());
+			}
 		}
 		else if chromosome_kind == ChromosomeKind::Compressed {
-			let chromosome = extract(&chromosome.location, &temp)?;
-			let chromosome = Chromosome::new(&chromosome, &output);
-			meta.push(chromosome.handle()?);
+			if let Ok(chromosome) = extract(&chromosome.location, &temp) {
+				let chromosome = Chromosome::new(&chromosome, &output);
+				if let Ok(chromosome_handler) = chromosome.handle() {
+					meta.push(chromosome_handler);
+				}
+				else {
+					println!("Failed to parse resourcepack {}", format!("'{}'", entry.path().display()).cyan());
+				}
+			}
+			else {
+				println!("Failed to extract compressed resourcepack {}", format!("'{}'", entry.path().display()).cyan());
+			}
 		}
 	}
 
@@ -61,7 +81,8 @@ use zip::ZipArchive;
 fn extract(path: &PathBuf, temp: &PathBuf) -> Result<PathBuf> {
 	let file = File::open(&path)?;
 	let mut zipper = ZipArchive::new(file)?;
-	let chromosome = temp.join(&path);
+	let relative_name = path.file_name().expect("Unable to get OsStr");
+	let chromosome = temp.join(&relative_name);
 
 	for i in 0..zipper.len() {
 		let mut file = zipper.by_index(i)?;
@@ -95,7 +116,7 @@ fn compress(from: &PathBuf, to: &PathBuf) -> Result<usize> {
 	let walker = WalkDir::new(&from);
 	let writer = File::create(&to)?;
 	let mut zipper = ZipWriter::new(writer);
-	let options = FileOptions::default().compression_method(CompressionMethod::Bzip2).unix_permissions(0o755);
+	let options = FileOptions::default().compression_method(CompressionMethod::Deflated).unix_permissions(0o755);
 	let mut buffer = Vec::new();
 	let mut total_bytes = 0;
 

@@ -4,6 +4,7 @@ mod gene;
 
 use clap::{Arg, App};
 use std::path::PathBuf;
+use std::fs::canonicalize;
 
 fn main() {
 	let matches = App::new("Ribozyme")
@@ -16,13 +17,23 @@ fn main() {
 			.required(true)
 			.index(1))
 		.get_matches();
-	let directory = matches.value_of("directory").unwrap_or_else(|| panic!("Invalid directory!"));
-	let directory = PathBuf::from(directory);
-	rna::merger(&directory).unwrap();
-
-	/* let path = PathBuf::from("test/default.json");
-	println!("exists?: {}", path.exists());
-	let test = std::fs::read_to_string(path).unwrap_or_else(|_| panic!("#1 Panicing..."));
-	let data: model::BlockState = serde_json::from_str(&test).unwrap_or_else(|e| panic!("{}", e));
-	println!("{:#?}", data); */
+	if let Some(directory) = matches.value_of("directory") {
+		let directory = PathBuf::from(directory);
+		if let Ok(directory) = canonicalize(directory) {
+			if directory.is_dir() {
+				if let Err(_) = rna::merger(&directory) {
+					println!("Unexpected error");
+				}
+			}
+			else {
+				println!("Given path is not directory");
+			}
+		}
+		else {
+			println!("Given path does not exists");
+		}
+	}
+	else {
+		println!("Invalid directory path");
+	}
 }
