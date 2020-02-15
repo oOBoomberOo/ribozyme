@@ -1,39 +1,24 @@
-mod model;
-mod rna;
-mod gene;
+#[macro_use]
+extern crate clap;
 
-use clap::{Arg, App};
+use clap::App;
 use std::path::PathBuf;
-use std::fs::canonicalize;
 
 fn main() {
-	let matches = App::new("Ribozyme")
-		.version("0.1.1")
-		.author("Boomber")
-		.about("Catalyst for resourcepacks merging")
-		.arg(Arg::with_name("directory")
-			.short("d")
-			.help("Merge resourcepacks within this directory")
-			.required(true)
-			.index(1))
-		.get_matches();
-	if let Some(directory) = matches.value_of("directory") {
-		let directory = PathBuf::from(directory);
-		if let Ok(directory) = canonicalize(directory) {
-			if directory.is_dir() {
-				if let Err(_) = rna::merger(&directory) {
-					println!("Unexpected error");
-				}
-			}
-			else {
-				println!("Given path is not directory");
-			}
-		}
-		else {
-			println!("Given path does not exists");
+	let cli = load_yaml!("../resource/cli.yml");
+	let app = App::from_yaml(cli);
+	let matches = app.get_matches();
+
+	if let Some(arg) = matches.value_of("directory") {
+		let path = PathBuf::from(arg);
+
+		if let Err(error) = run(&path) {
+			eprintln!("{}", error);
 		}
 	}
-	else {
-		println!("Invalid directory path");
-	}
+}
+
+use std::error;
+fn run(directory: &PathBuf) -> Result<(), Box<dyn error::Error>> {
+	todo!()
 }
