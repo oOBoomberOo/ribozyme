@@ -11,3 +11,6 @@ console = "0.9.2"
 dialoguer = "0.5.0"
 indicatif = "0.14.0"
 clap = { version = "2.33.0", features = ["yaml"] }
+zip = "0.5.4"
+serde_json = "1.0.48"
+serde = { version = "1.0.104", features = ["derive"] }
