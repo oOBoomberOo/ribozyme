@@ -2,13 +2,17 @@ use std::path::PathBuf;
 use std::ffi::OsString;
 #[derive(Default, Eq, Clone)]
 pub struct Resource {
+	/// Relative path inside resourcepack, useful for compressing file
 	location: PathBuf,
+	/// Real path from where this resource is from
+	original: PathBuf,
 	name: OsString,
 	content: Content,
 	format: ResourceFormat
 }
 
 use crate::{ProgramResult, ProgramError};
+use crate::resourcepack_meta::MetaPath;
 use super::template::{Model, Lang};
 use std::fs;
 use std::io;
@@ -19,12 +23,11 @@ use zip::ZipWriter;
 use zip::write::FileOptions;
 use serde_json as js;
 impl Resource {
-	pub fn from_entry(entry: io::Result<fs::DirEntry>, format: ResourceType, parent: impl Into<PathBuf>) -> ProgramResult<Resource> {
+	pub fn from_entry(entry: io::Result<fs::DirEntry>, format: ResourceType, parent: &MetaPath) -> ProgramResult<Resource> {
 		let entry: fs::DirEntry = entry?;
-		let parent = parent.into();
 		let name = entry.file_name();
 		let path = entry.path();
-		let location = path.strip_prefix(&parent)?.to_path_buf();
+		let location = path.strip_prefix(&parent.path)?.to_path_buf();
 
 		let file_type = match entry.file_type() {
 			Ok(result) => result,
@@ -40,12 +43,24 @@ impl Resource {
 			let child: HashSet<Resource> = HashSet::from_iter(child_iter);
 			let content = Content::Folder(child);
 			let format = ResourceFormat::Folder(format);
+			let original = path;
 
-			let result = Resource { location, name, content, format };
+			let result = Resource { location, original, name, content, format };
 
 			Ok(result)
 		}
 		else {
+			if let Some(extension) = path.extension() {
+				let error_format = ResourceFormat::File(format);
+
+				if format == ResourceType::Model && extension != "json" {
+					return Err(ProgramError::InvalidResourceFormat(path, error_format));
+				}
+				if format == ResourceType::Lang && extension != "json" {
+					return Err(ProgramError::InvalidResourceFormat(path, error_format));
+				}
+			}
+
 			let content = match fs::read(&path) {
 				Ok(result) => result,
 				Err(error) => return Err(ProgramError::IoWithPath(path, error))
@@ -56,15 +71,16 @@ impl Resource {
 			if path.file_name() == Some(OsStr::new(".DS_Store")) {
 				return Err(ProgramError::InvalidResourceFormat(path, format))
 			}
+
+			let original = parent.original.join(&location);
 			
-			let result = Resource { location, name, content, format };
+			let result = Resource { location, original, name, content, format };
 			Ok(result)
 		}
 	}
 
-	pub fn from_namespace(entry: io::Result<fs::DirEntry>, parent: impl Into<PathBuf>) -> ProgramResult<Resource> {
+	pub fn from_namespace(entry: io::Result<fs::DirEntry>, parent: &MetaPath) -> ProgramResult<Resource> {
 		let entry: fs::DirEntry = entry?;
-		let parent = parent.into();
 
 		let format = match entry.file_name().to_str() {
 			Some("models") => ResourceType::Model,
@@ -85,24 +101,25 @@ impl Resource {
 
 					let model: Model = match js::from_slice(content) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(location, error))
+						Err(error) => return Err(ResourceError::Serde(self.original, error))
 					};
 					let other_model: Model = match js::from_slice(other_content) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(location, error))
+						Err(error) => return Err(ResourceError::Serde(other.original, error))
 					};
 
 					let merged_model = model.merge(other_model);
 					let content = match js::to_vec(&merged_model) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(location, error))
+						Err(error) => return Err(ResourceError::Serde(other.original, error))
 					};
 
 					let content = Content::File(content);
 					let name = other.name;
 					let format = other.format;
+					let original = other.original;
 
-					let result = Resource { location, name, content, format };
+					let result = Resource { location, original, name, content, format };
 
 					Ok(result)
 				},
@@ -113,24 +130,25 @@ impl Resource {
 
 					let mut content: Lang = match js::from_slice(content) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(location, error))
+						Err(error) => return Err(ResourceError::Serde(self.original, error))
 					};
 					let other_content: Lang = match js::from_slice(other_content) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(location, error))
+						Err(error) => return Err(ResourceError::Serde(other.original, error))
 					};
 
 					content.extend(other_content.into_iter());
 					let content_str = match js::to_vec_pretty(&content) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(location, error))
+						Err(error) => return Err(ResourceError::Serde(other.original, error))
 					};
 
 					let name = other.name;
 					let content = Content::File(content_str);
 					let format = other.format;
+					let original = other.original;
 
-					let result = Resource { location, name, content, format };
+					let result = Resource { location, original, name, content, format };
 
 					Ok(result)
 				}
@@ -153,8 +171,9 @@ impl Resource {
 				let name = other.name;
 				let content = Content::Folder(content);
 				let format = other.format;
+				let original = other.original;
 
-				let result = Resource { location, name, content, format };
+				let result = Resource { location, original, name, content, format };
 				
 				Ok(result)
 			},

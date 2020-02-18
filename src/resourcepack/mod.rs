@@ -19,22 +19,20 @@ pub struct Resourcepack {
 }
 
 use crate::{ProgramResult, ProgramError};
+use crate::resourcepack_meta::MetaPath;
 use std::path::PathBuf;
 use std::fs;
-use std::io::{Read};
 use std::iter::FromIterator;
 use zip::ZipWriter;
 use zip::write::FileOptions;
 use console::style;
 use serde_json as js;
 impl Resourcepack {
-	pub fn from_path(path: impl Into<PathBuf>) -> ProgramResult<Resourcepack> {
-		let path: PathBuf = path.into();
+	pub fn from_metapath(meta_path: &MetaPath) -> ProgramResult<Resourcepack> {
+		let path: &PathBuf = &meta_path.path;
 
 		let packmeta = path.join("pack.mcmeta");
-		let mut reader = fs::File::open(&packmeta)?;
-		let mut content = String::default();
-		reader.read_to_string(&mut content)?;
+		let content = fs::read_to_string(&packmeta)?;
 
 		// Workaround for BOM encoding format
 		let bom_workaround = content.trim_start_matches('\u{feff}');
@@ -47,7 +45,7 @@ impl Resourcepack {
 		let assets = path.join("assets");
 		let namespaces = match assets.read_dir() {
 			Ok(entries) => entries.filter_map(|entry| {
-				match Namespace::from_entry(entry, &path) {
+				match Namespace::from_entry(entry, &meta_path) {
 					Ok(namespace) => Some(namespace),
 					Err(error) => {
 						eprintln!("{} {}", style("[Warn]").yellow(), error);

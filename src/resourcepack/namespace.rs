@@ -5,11 +5,13 @@ use std::ffi::OsString;
 #[derive(Default, Eq, Clone, Debug)]
 pub struct Namespace {
 	location: PathBuf,
+	original: PathBuf,
 	name: OsString,
 	child: HashSet<Resource>
 }
 
 use crate::{ProgramResult, ProgramError};
+use crate::resourcepack_meta::MetaPath;
 use std::fs;
 use std::io;
 use std::iter::FromIterator;
@@ -17,9 +19,8 @@ use std::path::PathBuf;
 use zip::ZipWriter;
 use zip::write::FileOptions;
 impl Namespace {
-	pub fn from_entry(entry: io::Result<fs::DirEntry>, parent: impl Into<PathBuf>) -> ProgramResult<Namespace> {
+	pub fn from_entry(entry: io::Result<fs::DirEntry>, parent: &MetaPath) -> ProgramResult<Namespace> {
 		let entry: fs::DirEntry = entry?;
-		let parent = parent.into();
 
 		match entry.file_type() {
 			Ok(result) => if result.is_file() {
@@ -30,19 +31,21 @@ impl Namespace {
 
 		let name = entry.file_name();
 		let path = entry.path();
-		let location = path.strip_prefix(&parent)?.to_path_buf();
+		let location = path.strip_prefix(&parent.path)?.to_path_buf();
 		let child_iter = match path.read_dir() {
 			Ok(entries) => entries.filter_map(|entry| Resource::from_namespace(entry, &parent).ok()),
 			Err(error) => return Err(ProgramError::IoWithPath(path, error))
 		};
 		let child: HashSet<Resource> = HashSet::from_iter(child_iter);
-		let result = Namespace { location, name, child };
+		let original = parent.original.join(&location);
+		let result = Namespace { location, original, name, child };
 		Ok(result)
 	}
 
 	pub fn merge(self, other: Namespace) -> ProgramResult<Namespace> {
 		let location = other.location;
 		let name = other.name;
+		let original = other.original;
 		let mut child: HashSet<Resource> = self.child;
 
 		for resource in other.child {
@@ -54,7 +57,7 @@ impl Namespace {
 			child.insert(result);
 		}
 
-		let result = Namespace { location, name, child };
+		let result = Namespace { location, original, name, child };
 		Ok(result)
 	}
 

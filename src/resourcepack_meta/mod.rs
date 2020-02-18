@@ -32,12 +32,6 @@ impl ResourcepackMeta {
 				Err(error) => return Err(ProgramError::ZipWithPath(location, error))
 			};
 
-			let packmeta = zip.by_name("pack.mcmeta").is_err();
-			let assets = zip.by_name("assets").is_err();
-
-			if packmeta || assets {
-				return Err(ProgramError::NotResourcepack(location));
-			}
 			let directory = tempdir()?;
 			for n in 0..zip.len() {
 				let mut file = match zip.by_index(n) {
@@ -60,7 +54,7 @@ impl ResourcepackMeta {
 				}
 			}
 
-			let location = MetaPath::new(directory.into_path(), true);
+			let location = MetaPath::new(directory.into_path(), location, true);
 			let result = ResourcepackMeta { location, name };
 
 			Ok(result)
@@ -72,7 +66,7 @@ impl ResourcepackMeta {
 				return Err(ProgramError::NotResourcepack(location));
 			}
 
-			let location = MetaPath::new(location, false);
+			let location = MetaPath::new(&location, &location, false);
 
 			let result = ResourcepackMeta { location, name };
 			Ok(result)
@@ -80,7 +74,7 @@ impl ResourcepackMeta {
 	}
 
 	pub fn build(self) -> ProgramResult<Resourcepack> {
-		let result = Resourcepack::from_path(&self.location.path)?;
+		let result = Resourcepack::from_metapath(&self.location)?;
 		self.location.remove()?;
 
 		Ok(result)
@@ -95,15 +89,17 @@ impl fmt::Display for ResourcepackMeta {
 }
 
 #[derive(Clone, Debug)]
-struct MetaPath {
-	path: PathBuf,
+pub struct MetaPath {
+	pub path: PathBuf,
+	pub original: PathBuf,
 	is_temp: bool,
 }
 
 impl MetaPath {
-	fn new(path: impl Into<PathBuf>, is_temp: bool) -> MetaPath {
+	fn new(path: impl Into<PathBuf>, original: impl Into<PathBuf>, is_temp: bool) -> MetaPath {
 		let path = path.into();
-		MetaPath { path, is_temp }
+		let original = original.into();
+		MetaPath { path, original, is_temp }
 	}
 
 	fn remove(self) -> ProgramResult<()> {

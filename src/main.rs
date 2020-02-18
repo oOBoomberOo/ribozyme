@@ -72,10 +72,11 @@ fn run(directory: PathBuf) -> ProgramResult<()> {
 
 	terminal.write_line("Successfully merged all resourcepacks.")?;
 
-	let merged_name = Input::<String>::with_theme(&theme)
+	let merged_name = Input::with_theme(&theme)
 		.allow_empty(false)
 		.show_default(true)
 		.with_prompt("Merged Resourcepack name")
+		.validate_with(PathValidator)
 		.default(String::from("Ribozyme"))
 		.interact_on(&terminal)?;
 
@@ -93,7 +94,9 @@ fn run(directory: PathBuf) -> ProgramResult<()> {
 
 type Resourcepacks = Vec<ResourcepackMeta>;
 fn get_resourcepacks(directory: &PathBuf) -> ProgramResult<Resourcepacks> {
+	// let result: Result<Vec<_>, _> = directory.read_dir()?
 	let result = directory.read_dir()?
+		// .map(|entry| ResourcepackMeta::new(entry))
 		.filter_map(|entry| ResourcepackMeta::new(entry).ok())
 		.collect();
 	Ok(result)
@@ -115,7 +118,9 @@ pub enum ProgramError {
 	ZipWithPath(PathBuf, ZipError),
 	Zip(ZipError),
 	InvalidResourceFormat(PathBuf, resources::ResourceFormat),
-	StripPrefix(StripPrefixError)
+	StripPrefix(StripPrefixError),
+	Regex(regex::Error),
+	Other(String)
 }
 
 use console::style;
@@ -149,6 +154,8 @@ impl fmt::Display for ProgramError {
 			ProgramError::Zip(error) => write!(f, "{}", error),
 			ProgramError::InvalidResourceFormat(path, format) => write!(f, "'{}' is an invalid resource format: {:?}.", style(path.display()).cyan(), style(format).blue()),
 			ProgramError::StripPrefix(error) => write!(f, "{}", error),
+			ProgramError::Regex(error) => write!(f, "{}", error),
+			ProgramError::Other(error) => write!(f, "{}", error),
 		}
 	}
 }
@@ -182,5 +189,29 @@ impl From<serde_json::Error> for ProgramError {
 impl From<StripPrefixError> for ProgramError {
 	fn from(error: StripPrefixError) -> ProgramError {
 		ProgramError::StripPrefix(error)
+	}
+}
+
+impl From<regex::Error> for ProgramError {
+	fn from(error: regex::Error) -> ProgramError {
+		ProgramError::Regex(error)
+	}
+}
+
+struct PathValidator;
+
+use regex::Regex;
+use dialoguer::Validator;
+impl Validator for PathValidator {
+	type Err = ProgramError;
+
+	fn validate(&self, text: &str) -> Result<(), ProgramError> {
+		let rex = Regex::new(r#"^[\w\-. ]+$"#)?;
+		if rex.is_match(text) {
+			Ok(())
+		}
+		else {
+			Err(ProgramError::Other("Not a valid file name".to_owned()))
+		}
 	}
 }

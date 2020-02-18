@@ -76,12 +76,17 @@ struct Rotation {
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 struct Face {
-	uv: [f32; 4],
+	#[serde(skip_serializing_if="Option::is_none")]
+	uv: Option<[f32; 4]>,
+
 	texture: String,
+	
 	#[serde(skip_serializing_if="Option::is_none")]
 	cullface: Option<String>,
+	
 	#[serde(skip_serializing_if="Option::is_none")]
 	rotation: Option<i32>,
+	
 	#[serde(skip_serializing_if="Option::is_none")]
 	tintindex: Option<i32>
 }
