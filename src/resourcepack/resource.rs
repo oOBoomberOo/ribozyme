@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::ffi::OsString;
-#[derive(Default, Eq, Clone, Debug)]
+#[derive(Default, Eq, Clone)]
 pub struct Resource {
 	location: PathBuf,
 	name: OsString,
@@ -12,23 +12,29 @@ use crate::{ProgramResult, ProgramError};
 use super::template::{Model, Lang};
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::iter::FromIterator;
+use std::ffi::OsStr;
+use zip::ZipWriter;
+use zip::write::FileOptions;
 use serde_json as js;
 impl Resource {
-	pub fn from_entry(entry: io::Result<fs::DirEntry>, format: ResourceType) -> ProgramResult<Resource> {
+	pub fn from_entry(entry: io::Result<fs::DirEntry>, format: ResourceType, parent: impl Into<PathBuf>) -> ProgramResult<Resource> {
 		let entry: fs::DirEntry = entry?;
+		let parent = parent.into();
 		let name = entry.file_name();
-		let location = entry.path();
+		let path = entry.path();
+		let location = path.strip_prefix(&parent)?.to_path_buf();
 
 		let file_type = match entry.file_type() {
 			Ok(result) => result,
-			Err(error) => return Err(ProgramError::IoWithPath(location, error))
+			Err(error) => return Err(ProgramError::IoWithPath(path, error))
 		};
 
 		if file_type.is_dir() {
-			let child_iter = match location.read_dir() {
-				Ok(entries) => entries.filter_map(|entry| Resource::from_entry(entry, format).ok()),
-				Err(error) => return Err(ProgramError::IoWithPath(location, error))
+			let child_iter = match path.read_dir() {
+				Ok(entries) => entries.filter_map(|entry| Resource::from_entry(entry, format, &parent).ok()),
+				Err(error) => return Err(ProgramError::IoWithPath(path, error))
 			};
 
 			let child: HashSet<Resource> = HashSet::from_iter(child_iter);
@@ -40,20 +46,25 @@ impl Resource {
 			Ok(result)
 		}
 		else {
-			let content = match fs::read(&location) {
+			let content = match fs::read(&path) {
 				Ok(result) => result,
-				Err(error) => return Err(ProgramError::IoWithPath(location, error))
+				Err(error) => return Err(ProgramError::IoWithPath(path, error))
 			};
 			let content = Content::File(content);
 			let format = ResourceFormat::File(format);
+
+			if path.file_name() == Some(OsStr::new(".DS_Store")) {
+				return Err(ProgramError::InvalidResourceFormat(path, format))
+			}
 			
 			let result = Resource { location, name, content, format };
 			Ok(result)
 		}
 	}
 
-	pub fn from_namespace(entry: io::Result<fs::DirEntry>) -> ProgramResult<Resource> {
+	pub fn from_namespace(entry: io::Result<fs::DirEntry>, parent: impl Into<PathBuf>) -> ProgramResult<Resource> {
 		let entry: fs::DirEntry = entry?;
+		let parent = parent.into();
 
 		let format = match entry.file_name().to_str() {
 			Some("models") => ResourceType::Model,
@@ -61,7 +72,7 @@ impl Resource {
 			_ => ResourceType::Other
 		};
 
-		Resource::from_entry(Ok(entry), format)
+		Resource::from_entry(Ok(entry), format, parent)
 	}
 
 	pub fn merge(self, other: Resource) -> ResourceResult<Resource> {
@@ -164,6 +175,33 @@ impl Resource {
 		match &self.content {
 			Content::Folder(contents) => Ok(contents.clone()),
 			Content::File(_) => Err(ResourceError::DirectoryAsFile(self.location.clone()))
+		}
+	}
+
+	pub fn build(self, zip: &mut ZipWriter<fs::File>, options: FileOptions) -> ProgramResult<()> {
+		match self.content {
+			Content::File(data) => {
+				zip.start_file_from_path(&self.location, options)?;
+				zip.write_all(&data)?;
+
+				Ok(())
+			},
+			Content::Folder(child) => {
+				for resource in child {
+					resource.build(zip, options)?;
+				}
+
+				Ok(())
+			}
+		}
+	}
+}
+
+impl fmt::Debug for Resource {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match &self.content {
+			Content::File(_) => write!(f, "{:?}", self.name),
+			Content::Folder(child) => write!(f, "{:?}: {:#?}", self.name, child)
 		}
 	}
 }

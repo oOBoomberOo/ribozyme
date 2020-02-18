@@ -28,7 +28,7 @@ type ProgramResult<T> = Result<T, ProgramError>;
 
 use console::Term;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::Checkboxes;
+use dialoguer::{Checkboxes, Input};
 use std::error;
 use std::io;
 fn run(directory: PathBuf) -> ProgramResult<()> {
@@ -64,13 +64,29 @@ fn run(directory: PathBuf) -> ProgramResult<()> {
 			passed_resourcepacks.push(resourcepacks[index].clone());
 		});
 	
-	let mut output_resourcepack = Resourcepack::default();
+	let mut output_resourcepack: Resourcepack = Resourcepack::default();
 	for resourcepack in passed_resourcepacks {
 		let resourcepack = resourcepack.build()?;
 		output_resourcepack.merge(resourcepack)?;
 	}
 
-	println!("{:#?}", output_resourcepack);
+	terminal.write_line("Successfully merged all resourcepacks.")?;
+
+	let merged_name = Input::<String>::with_theme(&theme)
+		.allow_empty(false)
+		.show_default(true)
+		.with_prompt("Merged Resourcepack name")
+		.default(String::from("Ribozyme"))
+		.interact_on(&terminal)?;
+
+	let output_path = directory.join(
+		format!("{}.zip", merged_name)
+	);
+	output_resourcepack.build(&output_path)?;
+
+	terminal.write_line(
+		&format!("Write merged resourcepacks to: {}", style(output_path.display()).cyan())
+	)?;
 
 	Ok(())
 }
@@ -83,6 +99,8 @@ fn get_resourcepacks(directory: &PathBuf) -> ProgramResult<Resourcepacks> {
 	Ok(result)
 }
 
+use zip::result::ZipError;
+use std::path::StripPrefixError;
 #[derive(Debug)]
 pub enum ProgramError {
 	NotDirectory(PathBuf),
@@ -91,8 +109,13 @@ pub enum ProgramError {
 	NotValidNamespace(PathBuf),
 	IoWithPath(PathBuf, io::Error),
 	Io(io::Error),
-	Serde(PathBuf, serde_json::Error),
-	Resource(resources::ResourceError)
+	SerdeWithPath(PathBuf, serde_json::Error),
+	Serde(serde_json::Error),
+	Resource(resources::ResourceError),
+	ZipWithPath(PathBuf, ZipError),
+	Zip(ZipError),
+	InvalidResourceFormat(PathBuf, resources::ResourceFormat),
+	StripPrefix(StripPrefixError)
 }
 
 use console::style;
@@ -117,10 +140,15 @@ impl fmt::Display for ProgramError {
 					write!(f, "'{}' is not a valid folder inside namespace.", style(path.display()).cyan())
 				}
 			}
-			ProgramError::IoWithPath(path, error) => write!(f, "[{}] {}.", style(path.display()).cyan(), error),
-			ProgramError::Serde(path, error) => write!(f, "[{}] {}.", style(path.display()).cyan(), error),
-			ProgramError::Resource(error) => write!(f, "{}.", error),
-			ProgramError::Io(error) => write!(f, "{}.", error),
+			ProgramError::IoWithPath(path, error) => write!(f, "[{}] {}", style(path.display()).cyan(), error),
+			ProgramError::SerdeWithPath(path, error) => write!(f, "[{}] {}", style(path.display()).cyan(), error),
+			ProgramError::Serde(error) => write!(f, "{}", error),
+			ProgramError::Resource(error) => write!(f, "{}", error),
+			ProgramError::Io(error) => write!(f, "{}", style(error).red()),
+			ProgramError::ZipWithPath(path, error) => write!(f, "[{}] {}.", style(path.display()).cyan(), error),
+			ProgramError::Zip(error) => write!(f, "{}", error),
+			ProgramError::InvalidResourceFormat(path, format) => write!(f, "'{}' is an invalid resource format: {:?}.", style(path.display()).cyan(), style(format).blue()),
+			ProgramError::StripPrefix(error) => write!(f, "{}", error),
 		}
 	}
 }
@@ -136,5 +164,23 @@ impl From<resources::ResourceError> for ProgramError {
 impl From<io::Error> for ProgramError {
 	fn from(error: io::Error) -> ProgramError {
 		ProgramError::Io(error)
+	}
+}
+
+impl From<ZipError> for ProgramError {
+	fn from(error: ZipError) -> ProgramError {
+		ProgramError::Zip(error)
+	}
+}
+
+impl From<serde_json::Error> for ProgramError {
+	fn from(error: serde_json::Error) -> ProgramError {
+		ProgramError::Serde(error)
+	}
+}
+
+impl From<StripPrefixError> for ProgramError {
+	fn from(error: StripPrefixError) -> ProgramError {
+		ProgramError::StripPrefix(error)
 	}
 }
