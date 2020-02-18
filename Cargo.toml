@@ -3,13 +3,20 @@ name = "ribozyme"
 version = "0.2.0"
 authors = ["boomber"]
 edition = "2018"
+description = "Blazingly fast resourcepacks merger"
+homepage = "https://github.com/oOBoomberOo/ribozyme"
+repository = "https://github.com/oOBoomberOo/ribozyme"
+readme = "README.md"
+keywords = ["resourcepack", "merger", "ribozyme", "minecraft"]
+categories = ["command-line-utilities"]
+license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[badges]
+maintenance = { status = "experimental" }
 
 [dependencies]
 console = "0.9.2"
 dialoguer = "0.5.0"
-indicatif = "0.14.0"
 clap = { version = "2.33.0", features = ["yaml"] }
 zip = "0.5.4"
 serde_json = "1.0.48"
