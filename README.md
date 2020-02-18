@@ -1,4 +1,4 @@
-# Ribozyme
+# Ribozyme ![Crates.io](https://img.shields.io/crates/v/ribozyme) [![Build Status](https://travis-ci.com/oOBoomberOo/ribozyme.svg?branch=master)](https://travis-ci.com/oOBoomberOo/ribozyme) [![Discord](https://img.shields.io/discord/428791010244558850?color=blue&label=Discord&logo=discord)](https://discord.gg/56ySADc)
 
 ## About
 
