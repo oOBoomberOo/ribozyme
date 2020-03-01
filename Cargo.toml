@@ -1,6 +1,6 @@
 [package]
 name = "ribozyme"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["boomber"]
 edition = "2018"
 description = "Catalyst for merging resourcepacks"

@@ -102,18 +102,43 @@ type Int = Option<i32>;
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 struct Predicate {
+	#[serde(skip_serializing_if="Option::is_none")]
 	angle: Float,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	blocking: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	broken: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	cast: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	cooldown: Float,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	damage: Float,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	damaged: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	lefthanded: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	pull: Float,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	pulling: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	throwing: Int,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
 	time: Float,
+
+	#[serde(skip_serializing_if="Option::is_none")]
 	custom_model_data: Int
 }
 
