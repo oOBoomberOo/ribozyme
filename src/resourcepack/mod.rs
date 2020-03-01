@@ -73,7 +73,7 @@ impl Resourcepack {
 				None => namespace
 			};
 
-			assets.insert(result);
+			assets.replace(result);
 		}
 
 		self.meta = meta;

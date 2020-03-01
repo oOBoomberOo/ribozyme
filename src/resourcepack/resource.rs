@@ -164,7 +164,7 @@ impl Resource {
 						None => resource
 					};
 
-					content.insert(result);
+					content.replace(result);
 				}
 
 				let location = other.location;

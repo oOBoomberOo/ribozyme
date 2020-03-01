@@ -54,7 +54,7 @@ impl Namespace {
 				None => resource
 			};
 
-			child.insert(result);
+			child.replace(result);
 		}
 
 		let result = Namespace { location, original, name, child };
