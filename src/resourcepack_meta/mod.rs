@@ -150,7 +150,7 @@ mod tests {
 	fn get_file_extension() {
 		assert_eq!(
 			ResourcepackMeta::get_extension(&PathBuf::from("/test/path.txt")),
-			Some("text")
+			Some("txt")
 		);
 	}
 }
