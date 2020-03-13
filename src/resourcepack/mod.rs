@@ -7,74 +7,82 @@ pub mod resources {
 	pub use super::resource::{Resource, ResourceError, ResourceFormat};
 }
 
+use crate::{ProgramResult, ProgramError, ResourcePath};
 use pack_meta::Meta;
 use namespace::Namespace;
-use resource::Resource;
+use resource::{Resource, ResourceError};
 
 use std::collections::HashSet;
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Resourcepack {
+	location: ResourcePath,
 	meta: Meta,
 	assets: HashSet<Namespace>
 }
 
-use crate::{ProgramResult, ProgramError};
-use crate::resourcepack_meta::MetaPath;
 use std::path::PathBuf;
-use std::fs;
+use std::fs::File;
 use std::iter::FromIterator;
-use zip::ZipWriter;
-use zip::write::FileOptions;
-use console::style;
-use serde_json as js;
+use tar::Builder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use rayon::prelude::*;
+use indicatif::ProgressBar;
 impl Resourcepack {
-	pub fn from_metapath(meta_path: &MetaPath) -> ProgramResult<Resourcepack> {
-		let path: &PathBuf = &meta_path.path;
+	pub fn new(location: &PathBuf) -> Resourcepack {
+		let location = ResourcePath::from_directory(location);
+		let meta = Meta::default();
+		let assets = HashSet::default();
+		Resourcepack { location, meta, assets }
+	}
 
-		let packmeta = path.join("pack.mcmeta");
-		let content = fs::read_to_string(&packmeta)?;
+	pub fn from_path(resource_path: &ResourcePath) -> ProgramResult<Resourcepack> {
+		let path = &resource_path.physical;
 
-		// Workaround for BOM encoding format
-		let bom_workaround = content.trim_start_matches('\u{feff}');
-
-		let meta: Meta = match js::from_str(&bom_workaround) {
-			Ok(result) => result,
-			Err(error) => return Err(ProgramError::SerdeWithPath(packmeta, error))
-		};
+		let pack_meta = path.join("pack.mcmeta");
+		let meta = Meta::from_path(pack_meta)?;
 
 		let assets = path.join("assets");
 		let namespaces = match assets.read_dir() {
-			Ok(entries) => entries.filter_map(|entry| {
-				match Namespace::from_entry(entry, &meta_path) {
-					Ok(namespace) => Some(namespace),
-					Err(error) => {
-						eprintln!("{} {}", style("[Warn]").yellow(), error);
-						None
-					}
-				}
-			}),
+			Ok(entries) => entries,
 			Err(error) => return Err(ProgramError::IoWithPath(assets, error))
 		};
-			
-		let assets: HashSet<Namespace> = HashSet::from_iter(namespaces);
 
-		let result = Resourcepack { meta, assets };
+		let namespaces: Result<Vec<Namespace>, _> = namespaces
+			.par_bridge()
+			.map(|entry| Namespace::from_entry(entry, &resource_path))
+			.filter_map(|resource| match resource {
+				Err(ProgramError::Resource(ResourceError::IgnoredFile)) => None,
+				other => Some(other)
+			})
+			.collect();
+		
+		let location = resource_path.to_owned();
+		let assets: HashSet<Namespace> = HashSet::from_iter(namespaces?);
+
+		let result = Resourcepack { location, meta, assets };
 
 		Ok(result)
 	}
 
-	pub fn merge(&mut self, other: Resourcepack) -> ProgramResult<()> {
+	pub fn merge(&mut self, other: Resourcepack, progress_bar: &ProgressBar) -> ProgramResult<()> {
 		let meta = self.meta.merge(other.meta);
 		let mut assets: HashSet<Namespace> = self.assets.clone();
 
-		for namespace in other.assets {
-			let result = match assets.take(&namespace) {
-				Some(original) => original.merge(namespace)?,
-				None => namespace
-			};
+		other.assets
+			.into_iter()
+			.map(|namespace| {
+				match self.assets.take(&namespace) {
+					Some(original) => original.merge(namespace, progress_bar),
+					None => Ok(namespace)
+				}
+			})
+			.try_for_each(|namespace| -> ProgramResult<()> {
+				assets.replace(namespace?);
+				Ok(())
+			})?;
 
-			assets.replace(result);
-		}
+		progress_bar.inc(assets.len() as u64);
 
 		self.meta = meta;
 		self.assets = assets;
@@ -82,35 +90,30 @@ impl Resourcepack {
 		Ok(())
 	}
 
-	pub fn build(self, output: impl Into<PathBuf>) -> ProgramResult<()> {
-		let output: PathBuf = output.into();
+	pub fn build(self, progress_bar: &ProgressBar, compression_level: u32) -> ProgramResult<()> {
+		let output = self.location.physical;
 
-		let writer = fs::File::create(&output)?;
-		let mut zip = ZipWriter::new(writer);
+		let writer = File::create(&output)?;
+		let mut archive = Builder::new(GzEncoder::new(writer, Compression::new(compression_level)));
 
-		let options = FileOptions::default()
-			.compression_method(get_compression_method())
-			.unix_permissions(0o755);
-
-		self.meta.build(&mut zip, options.clone())?;
+		self.meta.build(&mut archive, progress_bar)?;
 		
-		for namespace in self.assets {
-			namespace.build(&mut zip, options.clone())?;
+		let result: Result<(), _> = self.assets
+			.into_iter()
+			.try_for_each(|namespace| namespace.build(&mut archive, progress_bar));
+		
+		if let Err(error) = result {
+				archive.finish()?;
+				// fs::remove_dir_all(output)?;
+			
+				return Err(error);
 		}
-
+		archive.finish()?;
+			
 		Ok(())
 	}
-}
 
-use zip::CompressionMethod;
-fn get_compression_method() -> CompressionMethod {
-	if cfg!(feature = "deflate") {
-		CompressionMethod::Deflated
-	}
-	else if cfg!(feature = "bzip2") {
-		CompressionMethod::Bzip2
-	}
-	else {
-		CompressionMethod::Stored
+	pub fn count(&self) -> u64 {
+		self.assets.iter().fold(0, |acc, namespace| acc + namespace.count())
 	}
 }

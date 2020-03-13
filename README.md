@@ -22,3 +22,4 @@ Ribozyme is a blazingly fast resourcepacks merger written in Rust.
 
 - Merging `custom_model_id`. Note that if there is a conflicting `custom_model_id` this tool cannot help with that.
 - Merging language files.
+- Merging directory.

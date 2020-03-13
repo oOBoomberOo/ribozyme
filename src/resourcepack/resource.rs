@@ -1,217 +1,266 @@
-use std::path::PathBuf;
 use std::ffi::OsString;
+use std::path::PathBuf;
 #[derive(Default, Eq, Clone)]
 pub struct Resource {
-	/// Relative path inside resourcepack, useful for compressing file
-	location: PathBuf,
-	/// Real path from where this resource is from
-	original: PathBuf,
+	location: ResourcePath,
+	relative: PathBuf,
 	name: OsString,
 	content: Content,
-	format: ResourceFormat
+	format: ResourceFormat,
 }
 
-use crate::{ProgramResult, ProgramError};
-use crate::resourcepack_meta::MetaPath;
-use super::template::{Model, Lang};
-use std::fs;
-use std::io;
-use std::io::Write;
-use std::iter::FromIterator;
-use std::ffi::OsStr;
-use zip::ZipWriter;
-use zip::write::FileOptions;
+use super::template::{Lang, Model};
+use crate::{ProgramError, ProgramResult, ResourcePath};
+use crate::utils::bom_fix_vec;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_json as js;
+use std::ffi::OsStr;
+use std::fs;
+use std::fs::File;
+use std::io;
+use std::iter::FromIterator;
+use tar::Builder;
+use flate2::write::GzEncoder;
+use indicatif::ProgressBar;
 impl Resource {
-	pub fn from_entry(entry: io::Result<fs::DirEntry>, format: ResourceType, parent: &MetaPath) -> ProgramResult<Resource> {
-		let entry: fs::DirEntry = entry?;
+	pub fn from_entry(
+		entry: fs::DirEntry,
+		format: ResourceType,
+		root: &ResourcePath,
+	) -> ProgramResult<Resource> {
 		let name = entry.file_name();
 		let path = entry.path();
-		let location = path.strip_prefix(&parent.path)?.to_path_buf();
+		let relative = path.strip_prefix(&root.physical)?.to_path_buf();
+		let location = root.join(&relative);
 
 		let file_type = match entry.file_type() {
 			Ok(result) => result,
-			Err(error) => return Err(ProgramError::IoWithPath(path, error))
+			Err(error) => return Err(ProgramError::IoWithPath(path, error)),
 		};
 
 		if file_type.is_dir() {
 			let child_iter = match path.read_dir() {
-				Ok(entries) => entries.filter_map(|entry| Resource::from_entry(entry, format, &parent).ok()),
-				Err(error) => return Err(ProgramError::IoWithPath(path, error))
+				Ok(entries) => entries,
+				Err(error) => return Err(ProgramError::IoWithPath(path, error)),
 			};
 
-			let child: HashSet<Resource> = HashSet::from_iter(child_iter);
+			let child: Result<Vec<Resource>, _> = child_iter
+				.par_bridge()
+				.map(|entry| Resource::from_entry(entry?, format, root))
+				.filter_map(|resource| match resource {
+					Err(ProgramError::Resource(ResourceError::IgnoredFile)) => None,
+					other => Some(other),
+				})
+				.collect();
+
+			let child: HashSet<Resource> = HashSet::from_iter(child?);
 			let content = Content::Folder(child);
 			let format = ResourceFormat::Folder(format);
-			let original = path;
 
-			let result = Resource { location, original, name, content, format };
+			let result = Resource {
+				location,
+				relative,
+				name,
+				content,
+				format,
+			};
 
 			Ok(result)
-		}
-		else {
+		} else {
 			if let Some(extension) = path.extension() {
-				let error_format = ResourceFormat::File(format);
-
 				if format == ResourceType::Model && extension != "json" {
-					return Err(ProgramError::InvalidResourceFormat(path, error_format));
+					return Err(ResourceError::IgnoredFile.into());
 				}
 				if format == ResourceType::Lang && extension != "json" {
-					return Err(ProgramError::InvalidResourceFormat(path, error_format));
+					return Err(ResourceError::IgnoredFile.into());
 				}
 			}
 
-			let content = match fs::read(&path) {
+			let mut content = match fs::read(&path) {
 				Ok(result) => result,
-				Err(error) => return Err(ProgramError::IoWithPath(path, error))
+				Err(error) => return Err(ProgramError::IoWithPath(path, error)),
 			};
-			let content = Content::File(content);
+
+			if content[0] == 239 {
+				content.remove(0);
+			}
+
+			let content = Content::File(content.to_vec());
 			let format = ResourceFormat::File(format);
 
 			if path.file_name() == Some(OsStr::new(".DS_Store")) {
-				return Err(ProgramError::InvalidResourceFormat(path, format))
+				return Err(ResourceError::IgnoredFile.into());
 			}
 
-			let original = parent.original.join(&location);
-			
-			let result = Resource { location, original, name, content, format };
+			let result = Resource {
+				location,
+				relative,
+				name,
+				content,
+				format,
+			};
 			Ok(result)
 		}
 	}
 
-	pub fn from_namespace(entry: io::Result<fs::DirEntry>, parent: &MetaPath) -> ProgramResult<Resource> {
-		let entry: fs::DirEntry = entry?;
-
-		let format = match entry.file_name().to_str() {
+	pub fn from_namespace(
+		entry: io::Result<fs::DirEntry>,
+		root: &ResourcePath,
+	) -> ProgramResult<Resource> {
+		let entry = entry?;
+		let format = match &entry.file_name().to_str() {
 			Some("models") => ResourceType::Model,
 			Some("lang") => ResourceType::Lang,
-			_ => ResourceType::Other
+			_ => ResourceType::Other,
 		};
 
-		Resource::from_entry(Ok(entry), format, parent)
+		Resource::from_entry(entry, format, root)
 	}
 
-	pub fn merge(self, other: Resource) -> ResourceResult<Resource> {
+	pub fn merge(self, other: Resource, progress_bar: &ProgressBar) -> ResourceResult<Resource> {
 		match self.format {
 			ResourceFormat::File(kind) => match kind {
 				ResourceType::Model => {
-					let content = self.get_content()?;
-					let other_content = other.get_content()?;
-					let location = other.location.clone();
-
-					let model: Model = match js::from_slice(content) {
-						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(self.original, error))
-					};
-					let other_model: Model = match js::from_slice(other_content) {
-						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(other.original, error))
-					};
+					let model: Model = self.get_content()?;
+					let other_model: Model = other.get_content()?;
 
 					let merged_model = model.merge(other_model);
 					let content = match js::to_vec(&merged_model) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(other.original, error))
+						Err(error) => {
+							return Err(ResourceError::Serde(other.location.origin, error))
+						}
 					};
 
+					let location = other.location;
 					let content = Content::File(content);
 					let name = other.name;
 					let format = other.format;
-					let original = other.original;
+					let relative = other.relative;
 
-					let result = Resource { location, original, name, content, format };
+					let result = Resource {
+						location,
+						relative,
+						name,
+						content,
+						format,
+					};
 
 					Ok(result)
-				},
+				}
 				ResourceType::Lang => {
-					let content = self.get_content()?;
-					let other_content = other.get_content()?;
-					let location = other.location.clone();
-
-					let mut content: Lang = match js::from_slice(content) {
-						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(self.original, error))
-					};
-					let other_content: Lang = match js::from_slice(other_content) {
-						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(other.original, error))
-					};
+					let mut content: Lang = self.get_content()?;
+					let other_content: Lang = other.get_content()?;
 
 					content.extend(other_content.into_iter());
 					let content_str = match js::to_vec_pretty(&content) {
 						Ok(result) => result,
-						Err(error) => return Err(ResourceError::Serde(other.original, error))
+						Err(error) => {
+							return Err(ResourceError::Serde(other.location.origin, error))
+						}
 					};
 
 					let name = other.name;
 					let content = Content::File(content_str);
 					let format = other.format;
-					let original = other.original;
+					let location = other.location;
+					let relative = other.relative;
 
-					let result = Resource { location, original, name, content, format };
+					let result = Resource {
+						location,
+						relative,
+						name,
+						content,
+						format,
+					};
 
 					Ok(result)
 				}
-				ResourceType::Other => Ok(other)
+				ResourceType::Other => Ok(other),
 			},
 			ResourceFormat::Folder(_kind) => {
 				let mut content = self.get_child()?;
-				let other_content = other.get_child()?;
 
-				for resource in other_content {
-					let result = match content.take(&resource) {
-						Some(original) => original.merge(resource)?,
-						None => resource
+				for resource in other.get_child()? {
+					let resource = match content.take(&resource) {
+						None => Ok(resource),
+						Some(original) => original.merge(resource, progress_bar),
 					};
 
-					content.replace(result);
+					content.replace(resource?);
 				}
 
+				progress_bar.inc(content.len() as u64);
+
 				let location = other.location;
+				let relative = other.relative;
 				let name = other.name;
 				let content = Content::Folder(content);
 				let format = other.format;
-				let original = other.original;
 
-				let result = Resource { location, original, name, content, format };
-				
+				let result = Resource {
+					location,
+					relative,
+					name,
+					content,
+					format,
+				};
+
 				Ok(result)
-			},
-			ResourceFormat::Unknown => {
-				Ok(other)
 			}
+			ResourceFormat::Unknown => Ok(other),
 		}
 	}
 
-	fn get_content(&self) -> ResourceResult<&[u8]> {
-		match &self.content {
-			Content::File(contents) => Ok(contents),
-			Content::Folder(_) => Err(ResourceError::FileAsDirectory(self.location.clone()))
+	fn get_content<'a, T: Deserialize<'a> + Serialize>(&'a self) -> ResourceResult<T> {
+		let content = match &self.content {
+			Content::File(contents) => contents,
+			Content::Folder(_) => {
+				return Err(ResourceError::FileAsDirectory(
+					self.location.origin.to_owned(),
+				))
+			}
+		};
+
+		let content = bom_fix_vec(content);
+		match js::from_slice(content) {
+			Ok(result) => Ok(result),
+			Err(error) => Err(ResourceError::Serde(self.location.origin.to_owned(), error)),
 		}
 	}
 
 	fn get_child(&self) -> ResourceResult<HashSet<Resource>> {
 		match &self.content {
 			Content::Folder(contents) => Ok(contents.clone()),
-			Content::File(_) => Err(ResourceError::DirectoryAsFile(self.location.clone()))
+			Content::File(_) => Err(ResourceError::DirectoryAsFile(self.location.origin.clone())),
 		}
 	}
 
-	pub fn build(self, zip: &mut ZipWriter<fs::File>, options: FileOptions) -> ProgramResult<()> {
+	pub fn build(self, archive: &mut Builder<GzEncoder<File>>, progress_bar: &ProgressBar) -> ProgramResult<()> {
 		match self.content {
-			Content::File(data) => {
-				zip.start_file_from_path(&self.location, options)?;
-				zip.write_all(&data)?;
-
-				Ok(())
-			},
-			Content::Folder(child) => {
-				for resource in child {
-					resource.build(zip, options)?;
+			Content::File(_) => {
+				let mut file = File::open(&self.location.physical)?;
+				progress_bar.inc(1);
+				if let Err(error) = archive.append_file(self.relative, &mut file) {
+					return Err(ProgramError::IoWithPath(self.location.physical, error));
 				}
-
 				Ok(())
 			}
+			Content::Folder(child) => {
+				if let Err(error) = archive.append_dir(self.relative, &self.location.physical) {
+					return Err(ProgramError::IoWithPath(self.location.physical, error));
+				}
+
+				child.into_iter().try_for_each(|x| x.build(archive, progress_bar))
+			}
+		}
+	}
+
+	pub fn count(&self) -> u64 {
+		match &self.content {
+			Content::File(_) => 1,
+			Content::Folder(child) => child.iter().fold(0, |acc, resource| acc + resource.count())
 		}
 	}
 }
@@ -220,7 +269,7 @@ impl fmt::Debug for Resource {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match &self.content {
 			Content::File(_) => write!(f, "{:?}", self.name),
-			Content::Folder(child) => write!(f, "{:?}: {:#?}", self.name, child)
+			Content::Folder(child) => write!(f, "{:?} [{}]: {:#?}", self.name, child.len(), child),
 		}
 	}
 }
@@ -229,12 +278,11 @@ use std::hash::{Hash, Hasher};
 impl Hash for Resource {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.name.hash(state);
-		self.format.hash(state);
 	}
 }
 impl PartialEq for Resource {
 	fn eq(&self, other: &Resource) -> bool {
-		self.name == other.name && self.format == other.format
+		self.name == other.name
 	}
 }
 
@@ -242,7 +290,17 @@ impl PartialEq for Resource {
 pub enum ResourceFormat {
 	File(ResourceType),
 	Folder(ResourceType),
-	Unknown
+	Unknown,
+}
+
+impl fmt::Display for ResourceFormat {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			ResourceFormat::File(_) => write!(f, "File"),
+			ResourceFormat::Folder(_) => write!(f, "Folder"),
+			ResourceFormat::Unknown => write!(f, "Unknown"),
+		}
+	}
 }
 
 impl Default for ResourceFormat {
@@ -255,7 +313,7 @@ impl Default for ResourceFormat {
 pub enum ResourceType {
 	Other,
 	Model,
-	Lang
+	Lang,
 }
 
 impl Default for ResourceType {
@@ -268,7 +326,7 @@ use std::collections::HashSet;
 #[derive(PartialEq, Eq, Clone)]
 pub enum Content {
 	File(Vec<u8>),
-	Folder(HashSet<Resource>)
+	Folder(HashSet<Resource>),
 }
 
 impl Default for Content {
@@ -281,7 +339,7 @@ impl fmt::Debug for Content {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Content::File(data) => write!(f, "{:?}", String::from_utf8(data.clone())),
-			Content::Folder(child) => write!(f, "{:#?}", child)
+			Content::Folder(child) => write!(f, "{:#?} ({})", child, child.len()),
 		}
 	}
 }
@@ -292,17 +350,35 @@ type ResourceResult<T> = Result<T, ResourceError>;
 pub enum ResourceError {
 	FileAsDirectory(PathBuf),
 	DirectoryAsFile(PathBuf),
-	Serde(PathBuf, serde_json::Error)
+	Serde(PathBuf, serde_json::Error),
+	IgnoredFile,
 }
 
-use console::style;
+use colored::*;
 use std::fmt;
 impl fmt::Display for ResourceError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			ResourceError::FileAsDirectory(path) => write!(f, "'{}' is recognized as directory even though it's a file. {}", style(path.display()).cyan(), style("(this is a logic error please contact @Boomber)").red().underlined()),
-			ResourceError::DirectoryAsFile(path) => write!(f, "'{}' is recognized as file even though it's a directory. {}", style(path.display()).cyan(), style("(this is a logic error please contact @Boomber)").red().underlined()),
-			ResourceError::Serde(path, error) => write!(f, "[{}] {}", style(path.display()).cyan(), error)
+			ResourceError::FileAsDirectory(path) => write!(
+				f,
+				"'{}' is recognized as directory even though it's a file. {}",
+				path.display().to_string().cyan(),
+				"(this is a logic error please contact @Boomber)"
+					.red()
+					.underline()
+			),
+			ResourceError::DirectoryAsFile(path) => write!(
+				f,
+				"'{}' is recognized as file even though it's a directory. {}",
+				path.display().to_string().cyan(),
+				"(this is a logic error please contact @Boomber)"
+					.red()
+					.underline()
+			),
+			ResourceError::Serde(path, error) => {
+				write!(f, "[{}] {}", path.display().to_string().cyan(), error)
+			}
+			ResourceError::IgnoredFile => write!(f, "Ignored File"),
 		}
 	}
 }

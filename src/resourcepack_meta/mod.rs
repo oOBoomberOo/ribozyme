@@ -1,72 +1,44 @@
-use super::{ProgramError, ProgramResult, Resourcepack};
+use super::{ProgramResult, ResourcePath, Resourcepack};
+use std::ffi::OsString;
 use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub struct ResourcepackMeta {
-	location: MetaPath,
-	name: String,
+	pub location: ResourcePath,
+	name: OsString,
 }
 
 use std::fs;
 use std::io;
-use zip::ZipArchive;
 use tempfile::tempdir;
 impl ResourcepackMeta {
-	pub fn new(entry: Result<fs::DirEntry, io::Error>) -> ProgramResult<ResourcepackMeta> {
+	pub fn new(entry: Result<fs::DirEntry, io::Error>) -> Result<ResourcepackMeta, MetaError> {
 		let entry: fs::DirEntry = entry?;
 		let location: PathBuf = entry.path();
-		let name = {
-			let name = &location.file_name().and_then(|osstr| osstr.to_str());
-			match name {
-				Some(x) => (*x).to_owned(),
-				None => "Unknown Resourcepack".to_owned(),
-			}
+		let name = match location.file_name() {
+			Some(name) => name.to_os_string(),
+			None => return Err(MetaError::InvalidName(location)),
 		};
 
 		if location.is_file() {
-			let reader = match fs::File::open(&location) {
-				Ok(result) => result,
-				Err(error) => return Err(ProgramError::IoWithPath(location, error))
-			};
-			let mut zip = match ZipArchive::new(reader) {
-				Ok(result) => result,
-				Err(error) => return Err(ProgramError::ZipWithPath(location, error))
-			};
+			// let reader = match fs::File::open(&location) {
+			// 	Ok(result) => result,
+			// 	Err(error) => return Err(MetaError::IoWithPath(location, error)),
+			// };
+			// let archive = Archive::new(GzDecoder::new(reader));
 
 			let directory = tempdir()?;
-			for n in 0..zip.len() {
-				let mut file = match zip.by_index(n) {
-					Ok(result) => result,
-					Err(error) => return Err(ProgramError::ZipWithPath(location, error))
-				};
-				let path = file.sanitized_name();
-				let output = directory.path().join(&path);
-
-				if file.is_dir() {
-					fs::create_dir_all(&output)?;
-				}
-				else {
-					if let Some(parent) = output.parent() {
-						fs::create_dir_all(parent)?;
-					}
-
-					let mut writer = fs::File::create(output)?;
-					io::copy(&mut file, &mut writer)?;
-				}
-			}
-
-			let location = MetaPath::new(directory.into_path(), location, true);
+			let location = ResourcePath::from_compress_file(directory.into_path(), location);
 			let result = ResourcepackMeta { location, name };
 
 			Ok(result)
-		}
-		else {
+		} else {
 			let meta = location.join("pack.mcmeta");
 			let assets = location.join("assets");
 			if !meta.is_file() || !assets.is_dir() {
-				return Err(ProgramError::NotResourcepack(location));
+				return Err(MetaError::NotResourcepack(location));
 			}
 
-			let location = MetaPath::new(&location, &location, false);
+			let location = ResourcePath::from_directory(location);
 
 			let result = ResourcepackMeta { location, name };
 			Ok(result)
@@ -74,39 +46,56 @@ impl ResourcepackMeta {
 	}
 
 	pub fn build(self) -> ProgramResult<Resourcepack> {
-		let result = Resourcepack::from_metapath(&self.location)?;
+		let result = Resourcepack::from_path(&self.location)?;
 		self.location.remove()?;
 
 		Ok(result)
+	}
+
+	pub fn get_name(&self) -> String {
+		self.name.to_string_lossy().to_string()
 	}
 }
 
 use std::fmt;
 impl fmt::Display for ResourcepackMeta {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", self.name)
+		write!(f, "{}", self.get_name())
 	}
 }
 
-#[derive(Clone, Debug)]
-pub struct MetaPath {
-	pub path: PathBuf,
-	pub original: PathBuf,
-	is_temp: bool,
+#[derive(Debug)]
+pub enum MetaError {
+	InvalidName(PathBuf),
+	Io(io::Error),
+	IoWithPath(PathBuf, io::Error),
+	NotResourcepack(PathBuf),
 }
 
-impl MetaPath {
-	fn new(path: impl Into<PathBuf>, original: impl Into<PathBuf>, is_temp: bool) -> MetaPath {
-		let path = path.into();
-		let original = original.into();
-		MetaPath { path, original, is_temp }
-	}
-
-	fn remove(self) -> ProgramResult<()> {
-		if self.is_temp {
-			fs::remove_dir_all(self.path)?;
+use colored::*;
+impl fmt::Display for MetaError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			MetaError::InvalidName(path) => write!(
+				f,
+				"'{}' is not a valid path",
+				path.display().to_string().cyan()
+			),
+			MetaError::Io(error) => write!(f, "{}", error),
+			MetaError::IoWithPath(path, error) => {
+				write!(f, "'{}' {}", path.display().to_string().cyan(), error)
+			}
+			MetaError::NotResourcepack(path) => write!(
+				f,
+				"'{}' is not a resourcepack",
+				path.display().to_string().cyan()
+			),
 		}
+	}
+}
 
-		Ok(())
+impl From<io::Error> for MetaError {
+	fn from(error: io::Error) -> MetaError {
+		MetaError::Io(error)
 	}
 }

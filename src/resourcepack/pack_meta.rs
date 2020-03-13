@@ -1,9 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+type Languages = Option<HashMap<String, Language>>;
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct Meta {
 	pack: PackFormat,
-	language: Option<HashMap<String, Language>>,
+	
+	#[serde(skip_serializing_if="Option::is_none")]
+	language: Languages
 }
 
 use serde_json::Value;
@@ -15,38 +20,69 @@ pub struct PackFormat {
 
 use std::fs;
 use std::path::PathBuf;
-use std::io::Write;
-use zip::{ZipWriter, write::FileOptions};
+use std::io::{Read};
+use tar::Builder;
+use flate2::write::GzEncoder;
 use serde_json as js;
-use crate::ProgramResult;
+use crate::{ProgramResult, ProgramError};
+use crate::utils::bom_fix;
+use indicatif::ProgressBar;
 impl Meta {
-	pub fn merge(&self, other: Meta) -> Meta {
-		let pack = self.pack.merge(other.pack);
-		let language = {
-			if self.language.is_none() && other.language.is_none() {
-				None
-			} else {
-				let mut language: HashMap<String, Language> = self.language.clone().unwrap_or_default();
-				for (key, value) in other.language.unwrap_or_default() {
-					let result = match language.get(&key) {
-						Some(original) => original.merge(value),
-						None => value,
-					};
-					language.insert(key, result);
-				}
+	pub fn from_path(path: PathBuf) -> ProgramResult<Meta> {
+		let mut file = fs::File::open(&path)?;
+		let mut content = String::default();
+		file.read_to_string(&mut content)?;
+		let content = bom_fix(content);
 
-				Some(language)
-			}
+		let result: Meta = match js::from_str(&content) {
+			Ok(result) => result,
+			Err(error) => return Err(ProgramError::SerdeWithPath(path, error))
 		};
+
+		Ok(result)
+	}
+
+	pub fn merge(&self, other: Meta) -> Meta {
+		let language = self.merge_language(&other);
+		let pack = self.pack.merge(other.pack);
 
 		Meta { pack, language }
 	}
 
-	pub fn build(self, writer: &mut ZipWriter<fs::File>, options: FileOptions) -> ProgramResult<()> {
-		writer.start_file_from_path(&PathBuf::from("pack.mcmeta"), options)?;
+	fn merge_language(&self, other: &Meta) -> Languages {
+		if self.language.is_none() && other.language.is_none() {
+			None
+		}
+		else {
+			let mut language = self.language.clone().unwrap_or_default();
 
-		let content = js::to_vec_pretty(&self)?;
-		writer.write_all(&content)?;
+			for (key, value) in other.language.clone().unwrap_or_default() {
+				let (key, value) = match language.get(&key) {
+					None => (key, value),
+					Some(original) => (key, original.merge(value))
+				};
+
+				language.insert(key, value);
+			}
+
+			Some(language)
+		}
+	}
+
+	pub fn build(self, writer: &mut Builder<GzEncoder<fs::File>>, progress_bar: &ProgressBar) -> ProgramResult<()> {
+		{
+			let mut file = fs::File::create("./pack.mcmeta")?;
+			js::to_writer(&mut file, &self)?;
+		}
+		let path = PathBuf::from("pack.mcmeta");
+		let mut reader = fs::File::open("./pack.mcmeta")?;
+		
+		fs::remove_file("./pack.mcmeta")?;
+		progress_bar.inc(1);
+
+		if let Err(error) = writer.append_file(&path, &mut reader) {
+			return Err(ProgramError::IoWithPath(path, error));
+		}
 
 		Ok(())
 	}
@@ -69,6 +105,7 @@ impl PackFormat {
 struct Language {
 	name: String,
 	region: String,
+
 	#[serde(skip_serializing_if = "Option::is_none")]
 	bidirectional: Option<bool>,
 }

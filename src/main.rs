@@ -1,37 +1,75 @@
-#[macro_use]
-extern crate clap;
-
-use clap::App;
+use clap::{crate_authors, crate_name, crate_version, App, Arg};
 use std::path::PathBuf;
 
 mod resourcepack;
 mod resourcepack_meta;
-use resourcepack::Resourcepack;
-use resourcepack_meta::ResourcepackMeta;
+mod utils;
+
 use resourcepack::resources;
+use resourcepack::Resourcepack;
+use resourcepack_meta::{MetaError, ResourcepackMeta};
+use utils::ResourcePath;
 
 fn main() {
-	let cli = load_yaml!("../resource/cli.yml");
-	let app = App::from_yaml(cli);
-	let matches = app.get_matches();
-
-	if let Some(arg) = matches.value_of("directory") {
-		let path = PathBuf::from(arg);
-
-		if let Err(error) = run(path) {
-			eprintln!("{}", error);
-		}
+	if let Err(error) = run() {
+		eprintln!("{}", error);
 	}
 }
 
+const COMPRESSION_LEVEL: u32 = 9;
+
 type ProgramResult<T> = Result<T, ProgramError>;
 
-use console::Term;
+use colored::*;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Checkboxes, Input};
+use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use rayon::prelude::*;
 use std::error;
+use std::fs;
 use std::io;
-fn run(directory: PathBuf) -> ProgramResult<()> {
+fn run() -> ProgramResult<()> {
+	let app = App::new(crate_name!())
+		.version(crate_version!())
+		.author(crate_authors!())
+		.about("Catalyst for merging your resourcepacks")
+		.arg(
+			Arg::with_name("directory")
+				.short("d")
+				.long("path")
+				.required(true)
+				.index(1)
+				.help("Directory to merge resourcepacks"),
+		)
+		.arg(
+			Arg::with_name("compression_level")
+				.short("l")
+				.long("level")
+				.takes_value(true)
+				.help("Compression level of the outputed file (0-9)"),
+		);
+	let matches = app.get_matches();
+	let directory = match matches.value_of("directory") {
+		Some(directory) => directory,
+		None => unreachable!(),
+	};
+	let compression_level = match matches.value_of("compression_level") {
+		Some(level) => {
+			if let Ok(result) = level.parse::<u32>() {
+				result
+			} else {
+				COMPRESSION_LEVEL
+			}
+		}
+		None => COMPRESSION_LEVEL,
+	};
+
+	if compression_level > 9 {
+		return Err(ProgramError::CompressionLevelTooLarge(compression_level));
+	}
+
+	let directory = PathBuf::from(directory);
+
 	if !directory.exists() {
 		return Err(ProgramError::NotExists(directory));
 	}
@@ -41,120 +79,167 @@ fn run(directory: PathBuf) -> ProgramResult<()> {
 	}
 
 	let theme = ColorfulTheme::default();
-	let terminal = Term::stdout();
-
 	let resourcepacks = get_resourcepacks(&directory)?;
 
-	terminal.write_line(
-		&format!("Found {} resourcepacks.", resourcepacks.len())
-	)?;
+	println!("Found {} resourcepacks", resourcepacks.len());
 
-	let checked_resourcepacks: Vec<(&ResourcepackMeta, bool)> = resourcepacks.iter().map(|res| (res, true)).collect();
-
-	let merge_list = Checkboxes::with_theme(&theme)
-		.with_prompt("Select resourcepacks to merge")
+	let resourcepacks_checked: Vec<(_, _)> = resourcepacks
+		.iter()
+		.map(|resourcepack| (resourcepack, true))
+		.collect();
+	let selection_list = Checkboxes::with_theme(&theme)
+		.with_prompt("Select resourcepack to merge")
 		.paged(true)
-		.items_checked(&checked_resourcepacks)
-		.clear(true)
-		.interact_on(&terminal)?;
+		.items_checked(&resourcepacks_checked)
+		.interact()?;
 
-	let mut passed_resourcepacks: Vec<ResourcepackMeta> = Vec::default();
-	merge_list.iter()
-		.for_each(|&index| {
-			passed_resourcepacks.push(resourcepacks[index].clone());
-		});
-	
-	let mut output_resourcepack: Resourcepack = Resourcepack::default();
-	for resourcepack in passed_resourcepacks {
-		let resourcepack = resourcepack.build()?;
-		output_resourcepack.merge(resourcepack)?;
+	let resourcepack_list: Vec<ResourcepackMeta> = selection_list
+		.iter()
+		.map(|&index| resourcepacks[index].clone())
+		.collect();
+
+	let merged_name = Input::<String>::with_theme(&theme)
+		.show_default(true)
+		.allow_empty(false)
+		.with_prompt("Merged file name")
+		.default(String::from("ribozyme"))
+		.validate_with(PathValidator)
+		.interact()?;
+	let output_path = PathBuf::from(format!("{}.tar.gz", merged_name));
+
+	let mut output_resourcepack = Resourcepack::new(&output_path);
+
+	let resourcepacks: Result<Vec<Resourcepack>, _> = resourcepack_list
+		.into_par_iter()
+		.map(|meta| meta.build())
+		.collect();
+
+	let resourcepacks = resourcepacks?;
+
+	let size: u64 = resourcepacks.iter().map(Resourcepack::count).sum();
+	let merging_progress = ProgressBar::new(size).with_style(
+		ProgressStyle::default_bar().template("Merging...     {wide_bar:.cyan/white} {pos}/{len}"),
+	);
+
+	for resourcepack in resourcepacks {
+		output_resourcepack.merge(resourcepack, &merging_progress)?;
 	}
 
-	terminal.write_line("Successfully merged all resourcepacks.")?;
+	merging_progress.finish();
 
-	let merged_name = Input::with_theme(&theme)
-		.allow_empty(false)
-		.show_default(true)
-		.with_prompt("Merged Resourcepack name")
-		.validate_with(PathValidator)
-		.default(String::from("Ribozyme"))
-		.interact_on(&terminal)?;
-
-	let output_path = directory.join(
-		format!("{}.zip", merged_name)
+	let size = output_resourcepack.count();
+	let compressing_progress = ProgressBar::new(size).with_style(
+		ProgressStyle::default_bar().template("Compressing... {wide_bar:.cyan/white} {pos}/{len}"),
 	);
-	output_resourcepack.build(&output_path)?;
 
-	terminal.write_line(
-		&format!("Write merged resourcepacks to: {}", style(output_path.display()).cyan())
-	)?;
+	output_resourcepack.build(&compressing_progress, compression_level)?;
+	compressing_progress.finish();
+
+	let meta = fs::metadata(&output_path)?;
+	let size = meta.len();
+	println!(
+		"Merged resourcepacks into '{}' ({})",
+		output_path.display(),
+		HumanBytes(size)
+	);
 
 	Ok(())
 }
 
-type Resourcepacks = Vec<ResourcepackMeta>;
-fn get_resourcepacks(directory: &PathBuf) -> ProgramResult<Resourcepacks> {
-	// let result: Result<Vec<_>, _> = directory.read_dir()?
-	let result = directory.read_dir()?
-		// .map(|entry| ResourcepackMeta::new(entry))
+use std::iter::Iterator;
+fn get_resourcepacks(directory: &PathBuf) -> ProgramResult<Vec<ResourcepackMeta>> {
+	let result = directory
+		.read_dir()?
+		.par_bridge()
 		.filter_map(|entry| ResourcepackMeta::new(entry).ok())
 		.collect();
 	Ok(result)
 }
 
-use zip::result::ZipError;
 use std::path::StripPrefixError;
 #[derive(Debug)]
 pub enum ProgramError {
+	CompressionLevelTooLarge(u32),
+
 	NotDirectory(PathBuf),
 	NotExists(PathBuf),
 	NotResourcepack(PathBuf),
 	NotValidNamespace(PathBuf),
+
 	IoWithPath(PathBuf, io::Error),
 	Io(io::Error),
+
 	SerdeWithPath(PathBuf, serde_json::Error),
 	Serde(serde_json::Error),
+
 	Resource(resources::ResourceError),
-	ZipWithPath(PathBuf, ZipError),
-	Zip(ZipError),
+
 	InvalidResourceFormat(PathBuf, resources::ResourceFormat),
+
 	StripPrefix(StripPrefixError),
+
 	Regex(regex::Error),
-	Other(String)
+
+	Meta(MetaError),
+
+	Other(String),
 }
 
-use console::style;
 use std::fmt;
 impl fmt::Display for ProgramError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			ProgramError::NotDirectory(path) => {
-				write!(f, "'{}' is not a directory.", style(path.display()).cyan())
+			ProgramError::CompressionLevelTooLarge(value) => {
+				write!(f, "Compression level {} is too large", value)
 			}
-			ProgramError::NotExists(path) => {
-				write!(f, "'{}' does not exists.", style(path.display()).cyan())
-			}
-			ProgramError::NotResourcepack(path) => {
-				write!(f, "'{}' is not a resourcepack.", style(path.display()).cyan())
-			}
+			ProgramError::NotDirectory(path) => write!(
+				f,
+				"'{}' is not a directory.",
+				path.display().to_string().cyan()
+			),
+			ProgramError::NotExists(path) => write!(
+				f,
+				"'{}' does not exists.",
+				path.display().to_string().cyan()
+			),
+			ProgramError::NotResourcepack(path) => write!(
+				f,
+				"'{}' is not a resourcepack.",
+				path.display().to_string().cyan()
+			),
 			ProgramError::NotValidNamespace(path) => {
 				if path.is_file() {
-					write!(f, "'{}' is not a valid file inside namespace.", style(path.display()).cyan())
-				}
-				else {
-					write!(f, "'{}' is not a valid folder inside namespace.", style(path.display()).cyan())
+					write!(
+						f,
+						"'{}' is not a valid file inside namespace.",
+						path.display().to_string().cyan()
+					)
+				} else {
+					write!(
+						f,
+						"'{}' is not a valid folder inside namespace.",
+						path.display().to_string().cyan()
+					)
 				}
 			}
-			ProgramError::IoWithPath(path, error) => write!(f, "[{}] {}", style(path.display()).cyan(), error),
-			ProgramError::SerdeWithPath(path, error) => write!(f, "[{}] {}", style(path.display()).cyan(), error),
+			ProgramError::Io(error) => write!(f, "{}", error.to_string().red()),
+			ProgramError::IoWithPath(path, error) => {
+				write!(f, "[{}] {}", path.display().to_string().cyan(), error)
+			}
+			ProgramError::SerdeWithPath(path, error) => {
+				write!(f, "[{}] {}", path.display().to_string().cyan(), error)
+			}
 			ProgramError::Serde(error) => write!(f, "{}", error),
 			ProgramError::Resource(error) => write!(f, "{}", error),
-			ProgramError::Io(error) => write!(f, "{}", style(error).red()),
-			ProgramError::ZipWithPath(path, error) => write!(f, "[{}] {}.", style(path.display()).cyan(), error),
-			ProgramError::Zip(error) => write!(f, "{}", error),
-			ProgramError::InvalidResourceFormat(path, format) => write!(f, "'{}' is an invalid resource format: {:?}.", style(path.display()).cyan(), style(format).blue()),
+			ProgramError::InvalidResourceFormat(path, format) => write!(
+				f,
+				"'{}' is an invalid resource format: {}.",
+				path.display().to_string().cyan(),
+				format!("{}", format).blue()
+			),
 			ProgramError::StripPrefix(error) => write!(f, "{}", error),
 			ProgramError::Regex(error) => write!(f, "{}", error),
+			ProgramError::Meta(error) => write!(f, "{}", error),
 			ProgramError::Other(error) => write!(f, "{}", error),
 		}
 	}
@@ -171,12 +256,6 @@ impl From<resources::ResourceError> for ProgramError {
 impl From<io::Error> for ProgramError {
 	fn from(error: io::Error) -> ProgramError {
 		ProgramError::Io(error)
-	}
-}
-
-impl From<ZipError> for ProgramError {
-	fn from(error: ZipError) -> ProgramError {
-		ProgramError::Zip(error)
 	}
 }
 
@@ -198,10 +277,16 @@ impl From<regex::Error> for ProgramError {
 	}
 }
 
+impl From<MetaError> for ProgramError {
+	fn from(error: MetaError) -> ProgramError {
+		ProgramError::Meta(error)
+	}
+}
+
 struct PathValidator;
 
-use regex::Regex;
 use dialoguer::Validator;
+use regex::Regex;
 impl Validator for PathValidator {
 	type Err = ProgramError;
 
@@ -209,8 +294,7 @@ impl Validator for PathValidator {
 		let rex = Regex::new(r#"^[\w\-. ]+$"#)?;
 		if rex.is_match(text) {
 			Ok(())
-		}
-		else {
+		} else {
 			Err(ProgramError::Other("Not a valid file name".to_owned()))
 		}
 	}
