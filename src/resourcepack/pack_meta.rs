@@ -19,10 +19,8 @@ pub struct PackFormat {
 }
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::io::{Read};
-use tar::Builder;
-use flate2::write::GzEncoder;
 use serde_json as js;
 use crate::{ProgramResult, ProgramError};
 use crate::utils::bom_fix;
@@ -69,20 +67,13 @@ impl Meta {
 		}
 	}
 
-	pub fn build(self, writer: &mut Builder<GzEncoder<fs::File>>, progress_bar: &ProgressBar) -> ProgramResult<()> {
-		{
-			let mut file = fs::File::create("./pack.mcmeta")?;
-			js::to_writer(&mut file, &self)?;
-		}
-		let path = PathBuf::from("pack.mcmeta");
-		let mut reader = fs::File::open("./pack.mcmeta")?;
-		
-		fs::remove_file("./pack.mcmeta")?;
-		progress_bar.inc(1);
+	pub fn build(self, path: &Path, progress_bar: &ProgressBar) -> ProgramResult<()> {
+		let output = path.join("pack.mcmeta");
+		let mut file = fs::File::create(output)?;
+		js::to_writer(&mut file, &self)?;
 
-		if let Err(error) = writer.append_file(&path, &mut reader) {
-			return Err(ProgramError::IoWithPath(path, error));
-		}
+		progress_bar.set_message("pack.mcmeta");
+		progress_bar.inc(1);
 
 		Ok(())
 	}

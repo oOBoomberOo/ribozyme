@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 #[derive(Default, Eq, Clone)]
 pub struct Resource {
 	location: ResourcePath,
@@ -19,9 +19,8 @@ use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::io;
+use std::io::Write;
 use std::iter::FromIterator;
-use tar::Builder;
-use flate2::write::GzEncoder;
 use indicatif::ProgressBar;
 impl Resource {
 	pub fn from_entry(
@@ -237,22 +236,24 @@ impl Resource {
 		}
 	}
 
-	pub fn build(self, archive: &mut Builder<GzEncoder<File>>, progress_bar: &ProgressBar) -> ProgramResult<()> {
+	pub fn build(self, path: &Path, progress_bar: &ProgressBar) -> ProgramResult<()> {
 		match self.content {
-			Content::File(_) => {
-				let mut file = File::open(&self.location.physical)?;
+			Content::File(data) => {
+				let output = path.join(&self.relative);
+				let mut file = File::create(output)?;
+				file.write_all(&data)?;
+
+				progress_bar.set_message(&self.relative.display().to_string());
 				progress_bar.inc(1);
-				if let Err(error) = archive.append_file(self.relative, &mut file) {
-					return Err(ProgramError::IoWithPath(self.location.physical, error));
-				}
 				Ok(())
 			}
 			Content::Folder(child) => {
-				if let Err(error) = archive.append_dir(self.relative, &self.location.physical) {
-					return Err(ProgramError::IoWithPath(self.location.physical, error));
-				}
+				let output = path.join(&self.relative);
+				fs::create_dir_all(output)?;
+				progress_bar.set_message(&self.relative.display().to_string());
+				progress_bar.inc(1);
 
-				child.into_iter().try_for_each(|x| x.build(archive, progress_bar))
+				child.into_iter().try_for_each(|x| x.build(path, progress_bar))
 			}
 		}
 	}
@@ -260,7 +261,7 @@ impl Resource {
 	pub fn count(&self) -> u64 {
 		match &self.content {
 			Content::File(_) => 1,
-			Content::Folder(child) => child.iter().fold(0, |acc, resource| acc + resource.count())
+			Content::Folder(child) => child.iter().fold(0, |acc, resource| acc + resource.count()) + 1
 		}
 	}
 }
