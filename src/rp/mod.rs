@@ -5,11 +5,11 @@ use std::fs::DirEntry;
 use std::io;
 
 mod source;
-mod resource;
+pub mod resource;
 mod traveller;
 pub use source::Source;
 pub use resource::Resource;
-use traveller::Traveller;
+pub use traveller::Traveller;
 
 #[derive(Debug)]
 pub struct Resourcepack {

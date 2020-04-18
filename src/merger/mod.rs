@@ -5,7 +5,11 @@ use std::fs;
 use anyhow::Result;
 
 mod conflict;
+mod conflict_solver;
+mod file;
+pub use file::File;
 pub use conflict::Conflict;
+pub use conflict_solver::ConflictSolver;
 
 #[derive(Debug)]
 pub struct Merger {
@@ -26,6 +30,11 @@ impl Merger {
 			.for_each(|x| x.into_conflict(&mut result));
 
 		result
+	}
+
+	pub fn into_conflict_solver(self) -> ConflictSolver<PathBuf, Conflict> {
+		let conflicts = self.get_conflict();
+		ConflictSolver::new(conflicts)
 	}
 
 	pub fn from_path(path: impl Into<PathBuf>) -> Result<Merger> {

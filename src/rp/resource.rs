@@ -1,8 +1,14 @@
 use super::Source;
 use crate::merger::Conflict;
+use anyhow::Result;
+use serde_json as js;
 use std::collections::HashMap;
+use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::path::{PathBuf, Component};
+use std::io;
+use std::io::ErrorKind;
+use std::path::{Component, PathBuf};
+use std::fs;
 
 #[derive(Debug)]
 pub struct Resource {
@@ -29,10 +35,8 @@ impl Resource {
 
 	pub fn kind(&self) -> ResourceKind {
 		let path = &self.source.relative;
-		let mut components = path
-			.components()
-			.skip(2); // Skip `data` folder and namespace folder
-		
+		let mut components = path.components().skip(2); // Skip `data` folder and namespace folder
+
 		components
 			.next()
 			.map_or(ResourceKind::Other, Resource::component_to_kind)
@@ -43,8 +47,15 @@ impl Resource {
 			Some("models") => ResourceKind::Model,
 			Some("textures") => ResourceKind::Texture,
 			Some("lang") => ResourceKind::Lang,
-			_ => ResourceKind::Other
+			_ => ResourceKind::Other,
 		}
+	}
+
+	pub fn data(&self) -> io::Result<Vec<u8>> {
+		let path = self.source.origin
+			.as_ref()
+			.ok_or_else(|| io::Error::new(ErrorKind::Other, "Resource is not real"))?;
+		fs::read(path)
 	}
 }
 
@@ -62,12 +73,12 @@ impl PartialEq for Resource {
 
 impl Eq for Resource {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceKind {
 	Model,
 	Texture,
 	Lang,
-	Other
+	Other,
 }
 
 #[cfg(test)]

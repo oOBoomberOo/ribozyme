@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 use structopt::StructOpt;
 use anyhow::Result;
+use std::collections::HashMap;
 
 mod app;
 mod merger;
 mod rp;
 
+use merger::File;
 use merger::Merger;
 
 fn main() {
@@ -17,10 +19,10 @@ fn main() {
 fn run() -> Result<()> {
 	let opt: Opt = Opt::from_args();
 	let merger = Merger::from_path(opt.directory)?;
-	let conflicts = merger.get_conflict();
+	let conflicts: HashMap<PathBuf, File> = merger.into_conflict_solver().into_iter().collect();
 
-	let key = PathBuf::from("assets/minecraft/models/item/carrot_on_a_stick.json");
-	println!("{:#?}", conflicts.get(&key));
+	println!("{:#?}", conflicts);
+
 	Ok(())
 }
 
