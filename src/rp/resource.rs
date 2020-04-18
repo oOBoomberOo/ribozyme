@@ -119,25 +119,25 @@ mod tests {
 
 	#[test]
 	fn model_resource() {
-		let resource = Resource::new(Source::new_virtual("data/boomber/models/test/hello.json"));
+		let resource = Resource::new(Source::new_virtual("assets/boomber/models/test/hello.json"));
 		assert_eq!(resource.kind(), ResourceKind::Model);
 	}
 
 	#[test]
 	fn texture_resource() {
-		let resource = Resource::new(Source::new_virtual("data/boomber/textures/item/test.png"));
+		let resource = Resource::new(Source::new_virtual("assets/boomber/textures/item/test.png"));
 		assert_eq!(resource.kind(), ResourceKind::Texture);
 	}
 
 	#[test]
 	fn lang_resource() {
-		let resource = Resource::new(Source::new_virtual("data/minecraft/lang/en_us.png"));
+		let resource = Resource::new(Source::new_virtual("assets/minecraft/lang/en_us.png"));
 		assert_eq!(resource.kind(), ResourceKind::Lang);
 	}
 
 	#[test]
 	fn invalid_resource() {
-		let resource = Resource::new(Source::new_virtual("data/boomber"));
+		let resource = Resource::new(Source::new_virtual("assets/boomber"));
 		assert_eq!(resource.kind(), ResourceKind::Other);
 	}
 

@@ -55,8 +55,8 @@ mod tests {
 
 	#[test]
 	fn create_new_source() {
-		let actual = Source::from_parent("/foo/bar", "/foo/bar/data/minecraft/functions/hello.mcfunction");
-		let expect = Source::new_virtual("data/minecraft/functions/hello.mcfunction");
+		let actual = Source::from_parent("/foo/bar", "/foo/bar/assets/minecraft/functions/hello.mcfunction");
+		let expect = Source::new_virtual("assets/minecraft/functions/hello.mcfunction");
 		assert_eq!(actual, Ok(expect));
 	}
 
@@ -68,17 +68,17 @@ mod tests {
 
 	#[test]
 	fn direct_source() {
-		let actual = Source::from_parent("", "data/minecraft/tags/functions/tick.json");
-		let expect = Source::new_virtual("data/minecraft/tags/functions/tick.json");
+		let actual = Source::from_parent("", "assets/minecraft/tags/functions/tick.json");
+		let expect = Source::new_virtual("assets/minecraft/tags/functions/tick.json");
 		assert_eq!(actual, Ok(expect));
 	}
 
 	#[test]
 	fn hashing_source() {
 		let mut map = HashSet::new();
-		map.insert(Source::new_origin("data/minecraft", "/foo/bar/data/minecraft"));
+		map.insert(Source::new_origin("assets/minecraft", "/foo/bar/assets/minecraft"));
 
-		assert!(map.contains(&Source::new_origin("data/minecraft", "/baz/data/minecraft")));
+		assert!(map.contains(&Source::new_origin("assets/minecraft", "/baz/assets/minecraft")));
 	}
 
 
@@ -86,8 +86,8 @@ mod tests {
 	#[should_panic]
 	fn hashing_invalid_source() {
 		let mut map = HashSet::new();
-		map.insert(Source::new_origin("data/minecraft", "/foo/bar/data/minecraft"));
+		map.insert(Source::new_origin("assets/minecraft", "/foo/bar/assets/minecraft"));
 
-		assert!(map.contains(&Source::new_origin("data/minecraft/tags", "/baz/data/minecraft/tags")));
+		assert!(map.contains(&Source::new_origin("assets/minecraft/tags", "/baz/assets/minecraft/tags")));
 	}
 }
