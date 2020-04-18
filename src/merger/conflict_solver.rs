@@ -1,3 +1,4 @@
+use crate::Style;
 use super::{Conflict, File};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,11 +14,11 @@ impl ConflictSolver {
 		ConflictSolver { conflicts }
 	}
 
-	pub fn solve(self) -> Result<HashMap<PathBuf, File>> {
+	pub fn solve(self, style: Style) -> Result<HashMap<PathBuf, File>> {
 		self.conflicts
 			.into_par_iter()
 			// Solve conflict
-			.map(|(key, conflicts)| (key, conflicts.solve()))
+			.map(|(key, conflicts)| (key, conflicts.solve(style)))
 			// Transform tuple of "key" and "file result" into result of tuple
 			.map(|(key, file)| file.map(|f| (key, f)))
 			.collect()

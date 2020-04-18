@@ -1,3 +1,4 @@
+use crate::Style;
 use crate::rp::Resource;
 use super::file::{File, Merger};
 use itertools::Itertools;
@@ -22,11 +23,11 @@ impl Conflict {
 		self.conflicts.push(resource);
 	}
 
-	pub fn solve(self) -> Result<File> {
+	pub fn solve(self, style: Style) -> Result<File> {
 		self.conflicts
 			.into_iter()
 			.map(File::from_resource)
-			.fold1(Result::<File>::merge)
+			.fold1(|x, y| Result::<File>::merge(x, y, style))
 			.unwrap_or_else(|| Err(Error::msg("Empty iterator")))
 	}
 }

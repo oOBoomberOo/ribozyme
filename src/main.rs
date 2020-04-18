@@ -20,10 +20,12 @@ fn main() {
 
 fn run() -> Result<()> {
 	let opt: Opt = Opt::from_args();
+	let style = Style { pretty: opt.pretty };
+
 	let merger = Merger::from_path(opt.directory)?;
 	let conflicts: HashMap<PathBuf, File> = merger
 		.into_conflict_solver()
-		.solve()?;
+		.solve(style)?;
 
 	let output = opt.output;
 	fs::remove_dir_all(&output)?;
@@ -42,5 +44,13 @@ struct Opt {
 	directory: PathBuf,
 
 	#[structopt(parse(from_str))]
-	output: PathBuf
+	output: PathBuf,
+
+	#[structopt(short, long)]
+	pretty: bool
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Style {
+	pretty: bool
 }
