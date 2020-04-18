@@ -32,7 +32,7 @@ impl Merger {
 		result
 	}
 
-	pub fn into_conflict_solver(self) -> ConflictSolver<PathBuf, Conflict> {
+	pub fn into_conflict_solver(self) -> ConflictSolver {
 		let conflicts = self.get_conflict();
 		ConflictSolver::new(conflicts)
 	}

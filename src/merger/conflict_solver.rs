@@ -1,43 +1,25 @@
 use super::{Conflict, File};
-use std::collections::hash_map::IntoIter;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use anyhow::Result;
+use rayon::prelude::*;
 
-pub struct ConflictSolver<K, V> {
-	conflicts: HashMap<K, V>,
+pub struct ConflictSolver {
+	conflicts: HashMap<PathBuf, Conflict>,
 }
 
-impl<K, V> ConflictSolver<K, V> {
-	pub fn new(conflicts: HashMap<K, V>) -> ConflictSolver<K, V> {
+impl ConflictSolver {
+	pub fn new(conflicts: HashMap<PathBuf, Conflict>) -> ConflictSolver {
 		ConflictSolver { conflicts }
 	}
-}
 
-impl IntoIterator for ConflictSolver<PathBuf, Conflict> {
-	type Item = (PathBuf, File);
-	type IntoIter = ConflictIter<PathBuf, Conflict>;
-	fn into_iter(self) -> Self::IntoIter {
-		let inner = self.conflicts.into_iter();
-		ConflictIter::new(inner)
-	}
-}
-
-pub struct ConflictIter<K, V> {
-	inner: IntoIter<K, V>,
-}
-
-impl<K, V> ConflictIter<K, V> {
-	pub fn new(inner: IntoIter<K, V>) -> ConflictIter<K, V> {
-		ConflictIter { inner }
-	}
-}
-
-impl Iterator for ConflictIter<PathBuf, Conflict> {
-	type Item = (PathBuf, File);
-	fn next(&mut self) -> Option<Self::Item> {
-		self.inner
-			.next()
-			.map(|(key, conflicts): (PathBuf, Conflict)| (key, conflicts.solve()))
-			.and_then(|(key, file)| file.map(|file| (key, file)))
+	pub fn solve(self) -> Result<HashMap<PathBuf, File>> {
+		self.conflicts
+			.into_par_iter()
+			// Solve conflict
+			.map(|(key, conflicts)| (key, conflicts.solve()))
+			// Transform tuple of "key" and "file result" into result of tuple
+			.map(|(key, file)| file.map(|f| (key, f)))
+			.collect()
 	}
 }

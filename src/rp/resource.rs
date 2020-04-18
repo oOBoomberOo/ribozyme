@@ -1,9 +1,6 @@
 use super::Source;
 use crate::merger::Conflict;
-use anyhow::Result;
-use serde_json as js;
 use std::collections::HashMap;
-use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::ErrorKind;

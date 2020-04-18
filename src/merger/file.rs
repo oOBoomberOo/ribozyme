@@ -3,6 +3,9 @@ use anyhow::Result;
 use serde_json as js;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
+use std::fs;
+use std::io;
 
 pub struct File {
 	data: Vec<u8>,
@@ -19,6 +22,15 @@ impl File {
 		let kind = resource.kind();
 		let result = File::new(data, kind);
 		Ok(result)
+	}
+
+	pub fn write(&self, path: PathBuf) -> io::Result<()> {
+		if let Some(parent) = path.parent() {
+			fs::create_dir_all(parent)?;
+			fs::write(path, &self.data)?;
+		}
+
+		Ok(())
 	}
 }
 
@@ -69,8 +81,10 @@ impl Merger for Lang {
 		let original: HashMap<String, String> = js::from_slice(&left.data)?;
 		let others: HashMap<String, String> = js::from_slice(&right.data)?;
 
-		let result: HashMap<String, String> =
-			original.into_iter().chain(others.into_iter()).collect();
+		let result: HashMap<String, String> = original
+			.into_iter()
+			.chain(others.into_iter())
+			.collect();
 
 		let data = js::to_vec(&result)?;
 
