@@ -39,7 +39,9 @@ impl File {
 	}
 
 	pub fn origin(&self) -> PathBuf {
-		todo!()
+		self.source
+			.surface_root()
+			.unwrap_or_else(|| self.source.origin())
 	}
 }
 

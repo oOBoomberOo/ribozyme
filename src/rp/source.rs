@@ -32,6 +32,12 @@ impl Source {
 	pub fn origin(&self) -> PathBuf {
 		self.root.join(&self.relative)
 	}
+
+	pub fn surface_root(&self) -> Option<PathBuf> {
+		let root = self.root.file_name().map(PathBuf::from)?;
+		let result = root.join(&self.relative);
+		Some(result)
+	}
 }
 
 impl PartialEq for Source {
