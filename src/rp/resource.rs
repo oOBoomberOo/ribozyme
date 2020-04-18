@@ -2,10 +2,9 @@ use super::Source;
 use crate::merger::Conflict;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::io;
-use std::io::ErrorKind;
 use std::path::{Component, PathBuf};
 use std::fs;
+use anyhow::{Result};
 
 #[derive(Debug)]
 pub struct Resource {
@@ -48,11 +47,14 @@ impl Resource {
 		}
 	}
 
-	pub fn data(&self) -> io::Result<Vec<u8>> {
-		let path = self.source.origin
-			.as_ref()
-			.ok_or_else(|| io::Error::new(ErrorKind::Other, "Resource is not real"))?;
-		fs::read(path)
+	pub fn data(&self) -> Result<Vec<u8>> {
+		let path = self.origin();
+		let result = fs::read(path)?;
+		Ok(result)
+	}
+
+	pub fn origin(&self) -> &PathBuf {
+		&self.source.origin
 	}
 }
 

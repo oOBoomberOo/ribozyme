@@ -5,23 +5,24 @@ use std::hash::{Hash, Hasher};
 #[derive(Debug, Clone)]
 pub struct Source {
 	pub relative: PathBuf,
-	pub origin: Option<PathBuf>,
+	pub origin: PathBuf,
 }
 
 impl Source {
-	pub fn new(relative: PathBuf, origin: Option<PathBuf>) -> Source {
+	pub fn new(relative: PathBuf, origin: PathBuf) -> Source {
 		Source { relative, origin }
 	}
 
+	#[cfg(test)]
 	pub fn new_virtual(relative: impl Into<PathBuf>) -> Source {
 		let relative = relative.into();
-		Source::new(relative, None)
+		Source::new(relative, PathBuf::default())
 	}
 
 	pub fn new_origin(relative: impl Into<PathBuf>, origin: impl Into<PathBuf>) -> Source {
 		let relative = relative.into();
 		let origin = origin.into();
-		Source::new(relative, Some(origin))
+		Source::new(relative, origin)
 	}
 
 	pub fn from_parent(parent: impl AsRef<Path>, origin: impl Into<PathBuf>) -> Result<Source, StripPrefixError> {

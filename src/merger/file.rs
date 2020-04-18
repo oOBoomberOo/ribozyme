@@ -6,21 +6,25 @@ use std::fmt;
 use std::path::PathBuf;
 use std::fs;
 use std::io;
+use thiserror::Error;
 
 pub struct File {
 	data: Vec<u8>,
 	kind: ResourceKind,
+	origin: PathBuf
 }
 
 impl File {
-	pub fn new(data: Vec<u8>, kind: ResourceKind) -> File {
-		File { data, kind }
+	pub fn new(data: Vec<u8>, kind: ResourceKind, origin: impl Into<PathBuf>) -> File {
+		let origin = origin.into();
+		File { data, kind, origin }
 	}
 
 	pub fn from_resource(resource: Resource) -> Result<File> {
 		let data = resource.data()?;
 		let kind = resource.kind();
-		let result = File::new(data, kind);
+		let origin = resource.origin();
+		let result = File::new(data, kind, origin);
 		Ok(result)
 	}
 
@@ -31,6 +35,10 @@ impl File {
 		}
 
 		Ok(())
+	}
+
+	pub fn origin(&self) -> PathBuf {
+		self.origin.clone()
 	}
 }
 
@@ -78,8 +86,10 @@ impl Merger for Lang {
 		let left = left?;
 		let right = right?;
 
-		let original: HashMap<String, String> = js::from_slice(&left.data)?;
-		let others: HashMap<String, String> = js::from_slice(&right.data)?;
+		let original: HashMap<String, String> = js::from_slice(&left.data)
+			.or_else(|error| Err(FileError::Serde(left.origin(), error)))?;
+		let others: HashMap<String, String> = js::from_slice(&right.data)
+			.or_else(|error| Err(FileError::Serde(right.origin(), error)))?;
 
 		let result: HashMap<String, String> = original
 			.into_iter()
@@ -88,7 +98,13 @@ impl Merger for Lang {
 
 		let data = js::to_vec(&result)?;
 
-		let result = File::new(data, left.kind);
+		let result = File::new(data, left.kind, right.origin);
 		Ok(result)
 	}
+}
+
+#[derive(Debug, Error)]
+pub enum FileError {
+	#[error("[{0}] {1}")]
+	Serde(PathBuf, js::Error)
 }
