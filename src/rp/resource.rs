@@ -8,7 +8,7 @@ use anyhow::{Result};
 
 #[derive(Debug)]
 pub struct Resource {
-	source: Source,
+	pub source: Source,
 }
 
 impl Resource {
@@ -53,8 +53,8 @@ impl Resource {
 		Ok(result)
 	}
 
-	pub fn origin(&self) -> &PathBuf {
-		&self.source.origin
+	pub fn origin(&self) -> PathBuf {
+		self.source.origin()
 	}
 }
 
@@ -86,7 +86,7 @@ mod tests {
 
 	#[test]
 	fn convert_to_conflict() {
-		let source = Source::new_virtual("test.mcfunction");
+		let source = Source::test("test.mcfunction");
 		let resource = Resource::new(source.clone());
 
 		let mut actual = HashMap::new();
@@ -102,15 +102,15 @@ mod tests {
 	#[test]
 	fn push_to_conflicts() {
 		let mut actual = HashMap::new();
-		Resource::new(Source::new_origin("test.mcfunction", "foo/test.mcfunction"))
+		Resource::new(Source::new("test.mcfunction", "foo"))
 			.into_conflict(&mut actual);
-		Resource::new(Source::new_origin("test.mcfunction", "bar/test.mcfunction"))
+		Resource::new(Source::new("test.mcfunction", "bar"))
 			.into_conflict(&mut actual);
 
 		let mut expect = HashMap::new();
 		let expected_conflicts = Conflict::new(vec![
-			Resource::new(Source::new_origin("test.mcfunction", "foo/test.mcfunction")),
-			Resource::new(Source::new_origin("test.mcfunction", "bar/test.mcfunction")),
+			Resource::new(Source::new("test.mcfunction", "foo")),
+			Resource::new(Source::new("test.mcfunction", "bar")),
 		]);
 		expect.insert(PathBuf::from("test.mcfunction"), expected_conflicts);
 
@@ -119,25 +119,25 @@ mod tests {
 
 	#[test]
 	fn model_resource() {
-		let resource = Resource::new(Source::new_virtual("assets/boomber/models/test/hello.json"));
+		let resource = Resource::new(Source::test("assets/boomber/models/test/hello.json"));
 		assert_eq!(resource.kind(), ResourceKind::Model);
 	}
 
 	#[test]
 	fn texture_resource() {
-		let resource = Resource::new(Source::new_virtual("assets/boomber/textures/item/test.png"));
+		let resource = Resource::new(Source::test("assets/boomber/textures/item/test.png"));
 		assert_eq!(resource.kind(), ResourceKind::Texture);
 	}
 
 	#[test]
 	fn lang_resource() {
-		let resource = Resource::new(Source::new_virtual("assets/minecraft/lang/en_us.png"));
+		let resource = Resource::new(Source::test("assets/minecraft/lang/en_us.png"));
 		assert_eq!(resource.kind(), ResourceKind::Lang);
 	}
 
 	#[test]
 	fn invalid_resource() {
-		let resource = Resource::new(Source::new_virtual("assets/boomber"));
+		let resource = Resource::new(Source::test("assets/boomber"));
 		assert_eq!(resource.kind(), ResourceKind::Other);
 	}
 

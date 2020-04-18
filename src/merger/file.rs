@@ -1,3 +1,4 @@
+use crate::rp::Source;
 use crate::rp::resource::{Resource, ResourceKind};
 use anyhow::Result;
 use serde_json as js;
@@ -11,20 +12,20 @@ use thiserror::Error;
 pub struct File {
 	data: Vec<u8>,
 	kind: ResourceKind,
-	origin: PathBuf
+	source: Source
 }
 
 impl File {
-	pub fn new(data: Vec<u8>, kind: ResourceKind, origin: impl Into<PathBuf>) -> File {
-		let origin = origin.into();
-		File { data, kind, origin }
+	pub fn new(data: Vec<u8>, kind: ResourceKind, source: impl Into<Source>) -> File {
+		let source = source.into();
+		File { data, kind, source }
 	}
 
 	pub fn from_resource(resource: Resource) -> Result<File> {
 		let data = resource.data()?;
 		let kind = resource.kind();
-		let origin = resource.origin();
-		let result = File::new(data, kind, origin);
+		let source = resource.source;
+		let result = File::new(data, kind, source);
 		Ok(result)
 	}
 
@@ -38,7 +39,7 @@ impl File {
 	}
 
 	pub fn origin(&self) -> PathBuf {
-		self.origin.clone()
+		todo!()
 	}
 }
 
@@ -98,7 +99,7 @@ impl Merger for Lang {
 
 		let data = js::to_vec(&result)?;
 
-		let result = File::new(data, left.kind, right.origin);
+		let result = File::new(data, left.kind, right.source);
 		Ok(result)
 	}
 }
