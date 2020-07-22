@@ -1,10 +1,12 @@
 use nom::branch::alt;
 use nom::bytes::complete::take_while1;
 use nom::character::complete::char;
+use nom::combinator::opt;
 use nom::sequence::tuple;
 use nom::IResult;
 
 pub fn parse_namespace(input: &str) -> IResult<&str, (&str, &str)> {
+	let (input, _prefix) = opt(char('#'))(input)?;
 	alt((full_namespace, partial_namespace))(input)
 }
 
@@ -19,7 +21,7 @@ fn full_namespace(input: &str) -> IResult<&str, (&str, &str)> {
 }
 
 fn is_namespace(c: char) -> bool {
-	c.is_ascii_digit() || c.is_ascii_lowercase() || c == '.' || c == '_' || c == '#'
+	c.is_ascii_digit() || c.is_ascii_lowercase() || c == '.' || c == '_'
 }
 
 fn is_namespace_path(c: char) -> bool {

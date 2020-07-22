@@ -1,7 +1,7 @@
 use super::File;
-use superfusion::prelude::{Index, Relation};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use std::path::Path;
+use superfusion::prelude::{Index, Relation};
 
 pub struct Other {
 	data: Vec<u8>,

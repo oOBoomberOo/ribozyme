@@ -15,16 +15,18 @@ license = "MIT"
 maintenance = { status = "experimental" }
 
 [dependencies]
-colored = "2.0.0"
 serde_json = "1.0.56"
 serde = { version = "1.0.114", features = ["derive"] }
 structopt = "0.3.15"
 anyhow = "1.0.31"
 thiserror = "1.0.20"
-superfusion = { git = "https://github.com/oOBoomberOo/fusion.git" }
+superfusion = "0.1.4"
 walkdir = "2.3.1"
-log = "0.4.8"
+log = "0.4.11"
 lazy_static = "1.4.0"
 glob = "0.3.0"
 nom = "5.1.2"
 env_logger = "0.7.1"
+zip = "0.5.6"
+zip-extensions = "0.4.0"
+tempfile = "3.1.0"

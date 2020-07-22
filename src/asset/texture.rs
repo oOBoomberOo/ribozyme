@@ -1,7 +1,7 @@
 use super::File;
-use superfusion::prelude::{Index, Relation};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use std::path::Path;
+use superfusion::prelude::{Index, Relation};
 
 pub struct Texture {
 	data: Vec<u8>,
@@ -11,7 +11,7 @@ impl Texture {
 	pub fn new(path: impl AsRef<Path>) -> Result<Self> {
 		let path = path.as_ref();
 		let data = std::fs::read(&path)
-			.with_context(|| format!("Fail to read texture file at {}", path.display()))?;
+			.with_context(|| "Reading texture file")?;
 		let result = Self { data };
 		Ok(result)
 	}

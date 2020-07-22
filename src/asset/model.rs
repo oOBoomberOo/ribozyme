@@ -1,26 +1,23 @@
-use super::File;
-use crate::namespace::{Kind, Namespace};
+use super::{from_index, into_index, File, Kind};
+use crate::namespace::Namespace;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::{Ord, Ordering, PartialOrd};
-use std::convert::TryFrom;
-use std::{collections::HashMap, path::{PathBuf, Path}};
+use std::collections::HashMap;
+use std::path::Path;
 use superfusion::prelude::{Error, Index, Pid, Relation};
-use log::*;
 
 pub struct Model {
 	pid: Pid,
-	path: PathBuf,
 	data: ModelFormat,
 }
 
 impl Model {
 	pub fn new(path: impl AsRef<Path>, pid: Pid) -> Result<Self> {
-		let path = path.as_ref();
-		let reader = std::fs::File::open(path)?;
-		let data = serde_json::from_reader(reader)?;
-		let result = Self { data, path: path.to_path_buf(), pid };
+		let reader = std::fs::File::open(path).with_context(|| "Reading model file")?;
+		let data = serde_json::from_reader(reader).with_context(|| "Parsing model file")?;
+		let result = Self { data, pid };
 		Ok(result)
 	}
 }
@@ -68,7 +65,6 @@ impl File for Model {
 	where
 		Self: Sized,
 	{
-		error!("Trying to merge '{}' with '{}'", self.path.display(), other.path.display());
 		let data = self.data.merge(other.data);
 		other.data = data;
 		Ok(other)
@@ -96,29 +92,17 @@ fn modify_relation(mut model: ModelFormat, from: &Index, to: &Index) -> ModelFor
 	}
 
 	if let Some(textures) = &mut model.textures {
-		textures.0.values_mut().for_each(set_if_true);
+		textures.inner().for_each(set_if_true);
 	}
 
 	if let Some(overrides) = &mut model.overrides {
 		overrides
-			.0
-			.iter_mut()
+			.inner()
 			.map(|i| &mut i.model)
 			.for_each(set_if_true)
 	}
 
 	model
-}
-
-fn into_index(kind: Kind, namespace: &Namespace, pid: Pid) -> Index {
-	let path = namespace.to_path(kind);
-	Index::new(pid, path)
-}
-
-fn from_index(index: &Index) -> Result<Namespace> {
-	let path = index.path();
-	Namespace::try_from(path)
-		.with_context(|| format!("'{}' cannot be converted to namespace", path.display()))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -142,8 +126,7 @@ struct ModelFormat {
 impl ModelFormat {
 	fn merge(self, other: Self) -> Self {
 		let overrides = match (self.overrides, other.overrides) {
-			(Some(v), None) => Some(v),
-			(None, Some(v)) => Some(v),
+			(Some(v), None) | (None, Some(v)) => Some(v),
 			(Some(a), Some(b)) => Some(a.merge(b)),
 			(None, None) => None,
 		};
@@ -163,6 +146,12 @@ impl ModelFormat {
 #[derive(Debug, Deserialize, Serialize)]
 struct Textures(HashMap<String, Namespace>);
 
+impl Textures {
+	fn inner(&mut self) -> impl Iterator<Item = &mut Namespace> {
+		self.0.values_mut()
+	}
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 enum Side {
 	#[serde(rename = "front")]
@@ -175,6 +164,10 @@ enum Side {
 struct Overrides(Vec<Override>);
 
 impl Overrides {
+	fn inner(&mut self) -> impl Iterator<Item = &mut Override> {
+		self.0.iter_mut()
+	}
+
 	fn merge(self, mut other: Self) -> Self {
 		let mut inner = self.0;
 		inner.append(&mut other.0);

@@ -26,13 +26,19 @@ impl Workspace {
 		let composite = criteria();
 
 		let path = path.as_ref();
+
+		info!("Initialize Workspace from path: {}", path.display());
+
 		let projects = path
 			.read_dir()?
 			.filter_map(path_entry)
 			.filter(|path| composite.check(path))
 			.enumerate()
 			.map(resourcepack)
-			.collect();
+			.collect::<Vec<_>>();
+
+		debug!("Found {} project(s) in total", projects.len());
+
 		let result = Self { projects };
 		Ok(result)
 	}
@@ -79,17 +85,19 @@ impl superfusion::prelude::Workspace for Workspace {
 		Strategy::Replace
 	}
 	fn file(path: &Path, pid: Pid) -> Option<Self::File> {
-		Asset::new(path, pid).map_err(|err| error!("[{}]: {}", path.display(), err)).ok()
+		Asset::new(path, pid)
+			.map_err(|err| error!("\n{:?}", err))
+			.ok()
 	}
 }
 
 lazy_static! {
 	static ref MINECRAFT_FOLDER: Pattern = Pattern::new("**/assets/minecraft/**").unwrap();
-	static ref MODEL: Pattern = Pattern::new("**/assets/*/models/**").unwrap();
-	static ref LANG: Pattern = Pattern::new("**/assets/*/lang/**").unwrap();
-	static ref TEXTURE: Pattern = Pattern::new("**/assets/*/textures/**").unwrap();
+	static ref MODEL: Pattern = Pattern::new("**/assets/*/models/**/*.json").unwrap();
+	static ref LANG: Pattern = Pattern::new("**/assets/*/lang/**/*.json").unwrap();
+	static ref TEXTURE: Pattern = Pattern::new("**/assets/*/textures/**/*.png").unwrap();
 	static ref PACK_META: Pattern = Pattern::new("**/pack.mcmeta").unwrap();
-	static ref BLOCKSTATE: Pattern = Pattern::new("**/assets/*/blockstates/**").unwrap();
+	static ref BLOCKSTATE: Pattern = Pattern::new("**/assets/*/blockstates/**/*.json").unwrap();
 }
 
 pub fn minecraft_folder(path: &Path) -> bool {

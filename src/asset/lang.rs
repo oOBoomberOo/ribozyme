@@ -1,8 +1,11 @@
 use super::File;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use log::*;
 use std::fs;
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{
+	collections::HashMap,
+	path::{Path, PathBuf},
+};
 use superfusion::prelude::{Error, Index, Relation};
 
 #[derive(Debug)]
@@ -15,8 +18,9 @@ impl Lang {
 	pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
 		let path = path.into();
 		let reader = fs::File::open(&path)
-			.with_context(|| format!("Reading language file at {}", path.display()))?;
-		let data = serde_json::from_reader(reader)?;
+			.with_context(|| "Reading language file")?;
+		let data = serde_json::from_reader(reader)
+			.with_context(|| "Parsing language file")?;
 		let result = Self { path, data };
 		Ok(result)
 	}
@@ -53,8 +57,8 @@ fn key_conflict(file: &Path, key: &str, from: &str, to: &str) {
 	warn!(
 		"[{file}] Key '{key}' already exists. Replace {from:?} with {to:?}",
 		file = file.display(),
-		key = key, //.cyan(),
-		from = from, //.bright_yellow(),
-		to = to, //.green()
+		key = key,
+		from = from,
+		to = to,
 	);
 }

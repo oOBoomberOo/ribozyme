@@ -1,10 +1,10 @@
 use super::Namespace;
 
-use std::convert::TryFrom;
-use std::fmt;
 use serde::de;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
+use std::fmt;
 
 impl Serialize for Namespace {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
