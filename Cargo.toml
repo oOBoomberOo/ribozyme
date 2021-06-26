@@ -1,6 +1,6 @@
 [package]
 name = "ribozyme"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Boomber <boomberisalreadytaken@gmail.com>"]
 edition = "2018"
 description = "Catalyst for merging resourcepacks"
@@ -15,12 +15,13 @@ license = "MIT"
 maintenance = { status = "experimental" }
 
 [dependencies]
+lexical-core = "0.7.5"
 serde_json = "1.0.56"
 serde = { version = "1.0.114", features = ["derive"] }
 structopt = "0.3.15"
 anyhow = "1.0.31"
 thiserror = "1.0.20"
-superfusion = "0.1.4"
+superfusion = "0.1.5"
 walkdir = "2.3.1"
 log = "0.4.11"
 lazy_static = "1.4.0"
